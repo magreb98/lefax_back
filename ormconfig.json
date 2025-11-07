@@ -1,0 +1,11 @@
+{
+  "type": "mysql",
+  "host": "localhost",
+  "port": 3306,
+  "username": "ton_utilisateur",
+  "password": "ton_mot_de_passe",
+  "database": "ton_nom_de_base_de_donnees",
+  "entities": ["src/entity/**/*.ts"],
+  "synchronize": true,
+  "logging": true
+}
