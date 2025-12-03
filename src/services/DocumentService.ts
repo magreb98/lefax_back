@@ -1,11 +1,11 @@
 import { AppDataSource } from "../config/database";
 import { Document } from "../entity/document";
 import { DocumentCategorie } from "../entity/document.categorie";
-import { Matiere } from "../entity/matiere";
-import { GroupePartage, TypeGroupePartage } from "../entity/groupe.partage";
 import { User, UserRole } from "../entity/user";
 import fs from 'fs';
 import path from 'path';
+import { Matiere } from "../entity/matiere";
+import { GroupePartage, GroupePartageType } from "../entity/groupe.partage";
 
 export class DocumentService {
     private documentRepository = AppDataSource.getRepository(Document);
@@ -19,14 +19,14 @@ export class DocumentService {
      */
     async getOrCreatePublicGroupe(): Promise<GroupePartage> {
         let publicGroupe = await this.groupePartageRepository.findOne({
-            where: { name: 'Public', type: TypeGroupePartage.CUSTOM }
+            where: { groupeName: 'Public', type: GroupePartageType.CUSTOM }
         });
 
         if (!publicGroupe) {
             publicGroupe = this.groupePartageRepository.create({
-                name: 'Public',
+                groupeName: 'Public',
                 description: 'Groupe de partage public par défaut - accessible à tous',
-                type: TypeGroupePartage.CUSTOM
+                type: GroupePartageType.CUSTOM
             });
             await this.groupePartageRepository.save(publicGroupe);
         }
@@ -192,13 +192,13 @@ export class DocumentService {
 
         if (document.groupesPartage) {
             document.groupesPartage = document.groupesPartage.filter(g => g.id !== groupeId);
-            
+
             // Si le document n'a plus de groupe, l'ajouter au groupe public
             if (document.groupesPartage.length === 0) {
                 const publicGroupe = await this.getOrCreatePublicGroupe();
                 document.groupesPartage = [publicGroupe];
             }
-            
+
             await this.documentRepository.save(document);
         }
 
@@ -256,14 +256,14 @@ export class DocumentService {
      */
     async incrementViewCount(id: string): Promise<Document> {
         const document = await this.documentRepository.findOne({ where: { id } });
-        
+
         if (!document) {
             throw new Error('Document non trouvé');
         }
 
         document.viewCount += 1;
         await this.documentRepository.save(document);
-        
+
         return document;
     }
 
@@ -272,14 +272,14 @@ export class DocumentService {
      */
     async incrementDownloadCount(id: string): Promise<Document> {
         const document = await this.documentRepository.findOne({ where: { id } });
-        
+
         if (!document) {
             throw new Error('Document non trouvé');
         }
 
         document.downaloadCount += 1;
         await this.documentRepository.save(document);
-        
+
         return document;
     }
 

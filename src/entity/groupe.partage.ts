@@ -1,58 +1,99 @@
-// groupe.partage.ts
-import { Column, Entity, ManyToMany, OneToMany, PrimaryGeneratedColumn, JoinTable, ManyToOne, JoinColumn } from "typeorm";
-import { Document } from "./document";
-import { Notification } from "./notification";
-import { User } from "./user";
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, ManyToMany, JoinColumn, JoinTable, OneToMany, OneToOne } from 'typeorm';
+import { User } from './user';
+import { Document } from './document';
+import { Class } from './classe';
+import { ApiProperty } from '@nestjs/swagger';
+import { Notification } from './notification';
 
-export enum TypeGroupePartage {
-    ECOLE = 'ecole',
-    FILIERE = 'filiere',
-    CLASSE = 'classe',
-    CUSTOM = 'custom' // Pour les groupes personnalisés
+export enum GroupePartageType {
+    SCHOOL = 'school',
+    CLASS = 'class',
+    CUSTOM = 'custom',
+    MATIERE = 'matiere',
+    FILIERE = 'filiere'
 }
 
 @Entity()
 export class GroupePartage {
     @PrimaryGeneratedColumn('uuid')
+    @ApiProperty({ description: 'Unique identifier for the groupe partage' })
     id!: string;
 
     @Column()
-    name!: string;
+    @ApiProperty({ description: 'Name of the groupe partage' })
+    groupeName!: string;
 
     @Column({ type: 'text', nullable: true })
+    @ApiProperty({ description: 'Description of the groupe partage' })
     description?: string;
 
     @Column({
         type: 'enum',
-        enum: TypeGroupePartage,
-        default: TypeGroupePartage.CUSTOM
+        enum: GroupePartageType,
+        default: GroupePartageType.CUSTOM
     })
-    type!: TypeGroupePartage;
+    @ApiProperty({ description: 'Type of the groupe partage' })
+    type!: GroupePartageType;
 
-    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
-    createdAt!: Date;
-
-    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
-    updatedAt!: Date;
-
-    @ManyToOne(() => User, { nullable: true })
+    // Owner/créateur du groupe (pour les groupes personnalisés)
+    @ManyToOne(() => User, user => user.ownedGroupesPartage, { nullable: true })
     @JoinColumn({ name: 'owner_id' })
+    @ApiProperty({ description: 'Owner of the groupe partage' })
     owner?: User;
 
-    // Relation ManyToMany avec Document (côté inverse)
-    @ManyToMany(() => Document, document => document.groupesPartage)
-    documents?: Document[];
-
-    @OneToMany(() => Notification, notification => notification.groupePartage)
-    notifications?: Notification[];
-
-    // Relation ManyToMany avec User (côté propriétaire avec JoinTable)
+    // Membres du groupe
     @ManyToMany(() => User, user => user.groupesPartage)
     @JoinTable({
         name: 'groupe_partage_users',
         joinColumn: { name: 'groupe_partage_id', referencedColumnName: 'id' },
         inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' }
     })
+    @ApiProperty({ description: 'Members of the groupe partage' })
     users?: User[];
+
+    // Membres autorisés à publier dans le groupe (pour les groupes personnalisés)
+    @ManyToMany(() => User)
+    @JoinTable({
+        name: 'groupe_partage_allowed_publishers',
+        joinColumn: { name: 'groupe_partage_id', referencedColumnName: 'id' },
+        inverseJoinColumn: { name: 'user_id', referencedColumnName: 'id' }
+    })
+    @ApiProperty({ description: 'Users allowed to publish in this groupe' })
+    allowedPublishers?: User[];
+
+    // Documents partagés dans ce groupe
+    @ManyToMany(() => Document, document => document.groupesPartage)
+    @ApiProperty({ description: 'Documents shared in this groupe' })
+    documents?: Document[];
+
+    // Classe associée (si c'est un groupe de classe)
+    @OneToOne(() => Class, classe => classe.groupePartage, { nullable: true })
+    @ApiProperty({ description: 'Class associated with this groupe partage' })
+    classe?: Class;
+
+    // Token d'invitation pour rejoindre le groupe
+    @Column({ nullable: true })
+    @ApiProperty({ description: 'Invitation token to join the groupe' })
+    invitationToken?: string;
+
+    // Date d'expiration du token d'invitation
+    @Column({ type: 'timestamp', nullable: true })
+    @ApiProperty({ description: 'Expiration date of the invitation token' })
+    invitationExpiresAt?: Date;
+
+    @Column({ default: true })
+    @ApiProperty({ description: 'Indicates if the groupe partage is active' })
+    isActive!: boolean;
+
+    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+    @ApiProperty({ description: 'Creation timestamp' })
+    createdAt!: Date;
+
+    @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
+    @ApiProperty({ description: 'Last update timestamp' })
+    updatedAt!: Date;
+
+    @OneToMany(() => Notification, notification => notification.groupePartage)
+    notifications!: Notification[];
 
 }

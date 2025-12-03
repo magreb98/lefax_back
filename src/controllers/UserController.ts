@@ -206,7 +206,7 @@ export class UserController {
 
       res.status(200).json({
         message: `${users.length} utilisateur(s) ajouté(s) à la classe avec succès`,
-        users: users.map(u => ({
+        users: users.map((u: { id: any; firstName: any; lastName: any; role: any; }) => ({
           id: u.id,
           firstName: u.firstName,
           lastName: u.lastName,

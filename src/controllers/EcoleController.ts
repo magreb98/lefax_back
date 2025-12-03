@@ -15,8 +15,8 @@ export class EcoleController {
 
             // Validation
             if (!schoolName || !schoolEmail || !schoolAdmin) {
-                return res.status(400).json({ 
-                    message: 'Les champs schoolName, schoolEmail et schoolAdmin sont requis' 
+                return res.status(400).json({
+                    message: 'Les champs schoolName, schoolEmail et schoolAdmin sont requis'
                 });
             }
 
@@ -29,9 +29,9 @@ export class EcoleController {
                 schoolAdmin
             });
 
-            res.status(201).json({ 
-                message: 'École créée avec succès', 
-                ecole 
+            res.status(201).json({
+                message: 'École créée avec succès',
+                ecole
             });
         } catch (error) {
             console.error('Erreur lors de la création de l\'école:', error);
@@ -47,9 +47,9 @@ export class EcoleController {
                 order: { createdAt: 'DESC' }
             });
 
-            res.status(200).json({ 
+            res.status(200).json({
                 count: ecoles.length,
-                ecoles 
+                ecoles
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -63,7 +63,7 @@ export class EcoleController {
             const { id } = req.params;
             const ecole = await this.ecoleRepository.findOne({
                 where: { id },
-                relations: ['groupePartage', 'groupePartage.users', 'filieres', 'students']
+                relations: ['groupePartage', 'groupePartage.users', 'filieres', 'filieres.classes', 'students']
             });
 
             if (!ecole) {
@@ -84,8 +84,8 @@ export class EcoleController {
 
             await this.groupePartageService.syncEcoleGroupePartage(id);
 
-            res.status(200).json({ 
-                message: 'Groupe de partage synchronisé avec succès' 
+            res.status(200).json({
+                message: 'Groupe de partage synchronisé avec succès'
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -114,9 +114,9 @@ export class EcoleController {
 
             await this.ecoleRepository.save(ecole);
 
-            res.status(200).json({ 
-                message: 'École mise à jour avec succès', 
-                ecole 
+            res.status(200).json({
+                message: 'École mise à jour avec succès',
+                ecole
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -128,7 +128,7 @@ export class EcoleController {
     async deleteEcole(req: any, res: any): Promise<void> {
         try {
             const { id } = req.params;
-            const ecole = await this.ecoleRepository.findOne({ 
+            const ecole = await this.ecoleRepository.findOne({
                 where: { id },
                 relations: ['groupePartage']
             });
@@ -147,48 +147,48 @@ export class EcoleController {
     }
 
 
-      async addEcoleToGroupe(req: Request, res: Response): Promise < void> {
-      try {
-        const { groupeId, ecoleId } = req.params;
-    
-        await this.groupePartageService.addEcoleToGroupe(ecoleId, groupeId);
-    
-        res.json({ message: 'École ajoutée au groupe avec succès' });
-      } catch(error) {
-        console.error('Erreur lors de l\'ajout de l\'école au groupe:', error);
-        res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de l\'ajout de l\'école au groupe' });
-      }
-    }
-    
-     
-      async removeEcoleFromGroupe(req: Request, res: Response): Promise < void> {
-      try {
-        const { groupeId, ecoleId } = req.params;
-    
-        await this.groupePartageService.removeEcoleFromGroupe(ecoleId, groupeId);
-    
-        res.json({ message: 'École retirée du groupe avec succès' });
-      } catch(error) {
-        console.error('Erreur lors du retrait de l\'école du groupe:', error);
-        res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors du retrait de l\'école du groupe' });
-      }
+    async addEcoleToGroupe(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, ecoleId } = req.params;
+
+            await this.groupePartageService.addEcoleToGroupe(ecoleId, groupeId);
+
+            res.json({ message: 'École ajoutée au groupe avec succès' });
+        } catch (error) {
+            console.error('Erreur lors de l\'ajout de l\'école au groupe:', error);
+            res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de l\'ajout de l\'école au groupe' });
+        }
     }
 
-      /**
-       * Synchroniser le groupe de partage d'une école
-       * POST /api/users/groupes/sync/ecole/:ecoleId
-       */
-      async syncEcoleGroupePartage(req: Request, res: Response): Promise < void> {
-      try {
-        const { ecoleId } = req.params;
-    
-        await this.groupePartageService.syncEcoleGroupePartage(ecoleId);
-    
-        res.json({ message: 'Groupe de l\'école synchronisé avec succès' });
-      } catch(error) {
-        console.error('Erreur lors de la synchronisation du groupe de l\'école:', error);
-        res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de la synchronisation du groupe de l\'école' });
-      }
+
+    async removeEcoleFromGroupe(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, ecoleId } = req.params;
+
+            await this.groupePartageService.removeEcoleFromGroupe(ecoleId, groupeId);
+
+            res.json({ message: 'École retirée du groupe avec succès' });
+        } catch (error) {
+            console.error('Erreur lors du retrait de l\'école du groupe:', error);
+            res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors du retrait de l\'école du groupe' });
+        }
     }
-    
+
+    /**
+     * Synchroniser le groupe de partage d'une école
+     * POST /api/users/groupes/sync/ecole/:ecoleId
+     */
+    async syncEcoleGroupePartage(req: Request, res: Response): Promise<void> {
+        try {
+            const { ecoleId } = req.params;
+
+            await this.groupePartageService.syncEcoleGroupePartage(ecoleId);
+
+            res.json({ message: 'Groupe de l\'école synchronisé avec succès' });
+        } catch (error) {
+            console.error('Erreur lors de la synchronisation du groupe de l\'école:', error);
+            res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de la synchronisation du groupe de l\'école' });
+        }
+    }
+
 }

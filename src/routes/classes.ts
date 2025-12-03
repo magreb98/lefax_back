@@ -76,13 +76,40 @@ router.delete('/:id', (req, res) => classeController.deleteClasse(req, res));
  * - id: string (requis) - ID de la classe
  */
 router.post('/:id/sync-groupe', (req, res) => classeController.syncClasseGroupe(req, res));
+
 /**
- * POST /api/classes/:id/sync-groupe
- * Synchroniser le groupe de partage associé à la classe
+ * GET /api/classes/:id/students
+ * Récupérer tous les étudiants d'une classe
  * Params:
  * - id: string (requis) - ID de la classe
  */
-router.post('/:id/sync-groupe', (req, res) => classeController.syncClasseGroupe(req, res));
+router.get('/:id/students', (req, res) => classeController.getStudentsByClasse(req, res));
+
+/**
+ * GET /api/classes/:id/matieres
+ * Récupérer toutes les matières d'une classe
+ * Params:
+ * - id: string (requis) - ID de la classe
+ */
+router.get('/:id/matieres', (req, res) => classeController.getMatieresByClasse(req, res));
+
+/**
+ * POST /api/classes/:classeId/delegate/:userId
+ * Promouvoir un étudiant comme délégué de classe
+ * Params:
+ * - classeId: string (requis) - ID de la classe
+ * - userId: string (requis) - ID de l'utilisateur
+ */
+router.post('/:classeId/delegate/:userId', (req, res) => classeController.setDelegate(req, res));
+
+/**
+ * DELETE /api/classes/:classeId/delegate/:userId
+ * Révoquer le statut de délégué d'un étudiant
+ * Params:
+ * - classeId: string (requis) - ID de la classe
+ * - userId: string (requis) - ID de l'utilisateur
+ */
+router.delete('/:classeId/delegate/:userId', (req, res) => classeController.removeDelegate(req, res));
 
 /**
  * POST /api/classes/groupes/:groupeId/classes/:classeId

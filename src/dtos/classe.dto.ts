@@ -1,4 +1,4 @@
-import { IsString } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 export class CreateClasseDto {
     @IsString()
@@ -6,4 +6,14 @@ export class CreateClasseDto {
 
     @IsString()
     filiereId!: string;
+}
+
+export class UpdateClasseDto {
+    @IsOptional()
+    @IsString()
+    className?: string;
+
+    @IsOptional()
+    @IsString()
+    filiereId?: string;
 }

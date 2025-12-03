@@ -1,9 +1,9 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn, ManyToMany, BeforeInsert } from "typeorm";
 import { Ecole } from "./ecole";
-import { GroupePartage } from "./groupe.partage";
 import { Document } from "./document";
 import { Class } from "./classe";
 import { EnseignementAssignment } from "./enseignement.assigment";
+import { GroupePartage } from "./groupe.partage";
 
 
 export enum UserRole {
@@ -37,8 +37,8 @@ export class User {
     @Column({ default: false })
     isSuspended!: boolean;
 
-    @Column()
-    isDelegate?:boolean;
+    @Column({nullable: true})
+    isDelegate?: boolean;
 
     @Column({
         type: 'enum',
@@ -52,6 +52,10 @@ export class User {
 
     @Column()
     password!: string;
+
+    // Permission de créer une école (accordée par le SUPERADMIN)
+    @Column({ default: false })
+    canCreateSchool!: boolean;
 
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     createdAt!: Date;

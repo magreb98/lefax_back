@@ -1,39 +1,178 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
+import cors from 'cors';
 import { AppDataSource } from './config/database';
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
-import { GroupePartage, TypeGroupePartage } from './entity/groupe.partage';
+import { GroupePartage, GroupePartageType } from './entity/groupe.partage';
 import { User } from './entity/user';
+import { logger, requestLogger } from './config/logger';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { apiLimiter } from './middleware/rateLimiter';
+// import { redisClient } from './config/redis'; // DISABLED
+import swaggerJsdoc from 'swagger-jsdoc';
 
+// Charger les variables d'environnement
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
 const app = express();
 
-app.use(express.json());
+// ===== CONFIGURATION SWAGGER =====
+import { swaggerOptions } from './config/swagger.config';
 
-AppDataSource.initialize()
-  .then(async () => {
-    console.log('✅ Base de données connectée avec succès');
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
 
+// ===== MIDDLEWARES DE SÉCURITÉ =====
+// Helmet pour sécuriser les headers HTTP
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+      },
+    },
+  })
+);
+
+// CORS
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN || '*',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
+// Body parser
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Logger HTTP
+app.use(requestLogger);
+
+// Rate limiting global
+app.use('/api', apiLimiter);
+
+// ===== ROUTES =====
+// Documentation Swagger avec options personnalisées
+const swaggerUiOptions = {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Lefax API Documentation',
+  customfavIcon: '/favicon.ico',
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true,
+    filter: true,
+    tryItOutEnabled: true,
+    syntaxHighlight: {
+      activate: true,
+      theme: 'monokai'
+    }
+  }
+};
+
+app.use('/api/docs', swaggerUi.serve);
+app.get('/api/docs', swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+
+// JSON brut de la spec Swagger (pour import dans Postman, etc.)
+app.get('/api/docs-json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
+// Route de santé
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+  });
+});
+
+// Middleware de debug - TEMPORAIRE
+app.use((req, res, next) => {
+  console.log('='.repeat(50));
+  console.log(`📨 Requête reçue: ${req.method} ${req.path}`);
+  console.log(`📍 URL complète: ${req.originalUrl}`);
+  console.log(`🔍 Base URL: ${req.baseUrl}`);
+  console.log('='.repeat(50));
+  next();
+});
+
+// Routes API
+app.use('/api', routes);
+
+// Middleware pour vérifier si la route a été traitée
+app.use((req, res, next) => {
+  console.log('⚠️ Route non interceptée par /api:', req.method, req.path);
+  next();
+});
+
+// ===== GESTION DES ERREURS =====
+// ⚠️ CRITIQUE: Ces middlewares doivent être APRÈS toutes les routes
+// Route non trouvée (404) - Attrape toutes les routes non définies
+app.use(notFoundHandler);
+
+// Gestionnaire d'erreurs global - TOUJOURS EN DERNIER
+app.use(errorHandler);
+
+// ===== INITIALISATION =====
+const initializeApp = async () => {
+  try {
+    // Connexion à la base de données
+    await AppDataSource.initialize();
+    logger.info('✅ Base de données connectée avec succès');
+
+    // Initialisation du groupe public
     const groupeRepo = AppDataSource.getRepository(GroupePartage);
     const userRepo = AppDataSource.getRepository(User);
 
+    // Créer ou récupérer l'utilisateur système
+    let systemUser = await userRepo.findOne({
+      where: { email: 'system@lefax.internal' }
+    });
+
+    if (!systemUser) {
+      logger.info('⚙️ Création de l\'utilisateur système...');
+      systemUser = userRepo.create({
+        firstName: 'System',
+        lastName: 'User',
+        phoneNumber: '000000000',
+        email: 'system@lefax.internal',
+        password: 'SYSTEM_USER_NO_LOGIN',
+        role: 'SUPERADMIN' as any
+      });
+      await userRepo.save(systemUser);
+      logger.info('✅ Utilisateur système créé.');
+    }
+
     let publicGroup = await groupeRepo.findOne({
-      where: { name: 'public' },
-      relations: ['users']
+      where: { groupeName: 'public' },
+      relations: ['users', 'owner'],
     });
 
     if (!publicGroup) {
-      console.log('⚙️ Création du groupe de partage "public"...');
+      logger.info('⚙️ Création du groupe de partage "public"...');
       publicGroup = groupeRepo.create({
-        name: 'public',
+        groupeName: 'public',
         description: 'Groupe de partage public par défaut contenant tous les utilisateurs.',
-        type: TypeGroupePartage.CUSTOM
+        type: GroupePartageType.CUSTOM,
+        owner: systemUser
       });
       await groupeRepo.save(publicGroup);
-      console.log('✅ Groupe "public" créé.');
+      logger.info('✅ Groupe "public" créé.');
+    } else if (!publicGroup.owner) {
+      // Si le groupe existe mais n'a pas d'owner, assigner le système
+      publicGroup.owner = systemUser;
+      await groupeRepo.save(publicGroup);
+      logger.info('✅ Propriétaire système assigné au groupe "public".');
     }
 
     const allUsers = await userRepo.find();
@@ -45,21 +184,60 @@ AppDataSource.initialize()
       if (newUsers.length > 0) {
         publicGroup.users = [...(publicGroup.users || []), ...newUsers];
         await groupeRepo.save(publicGroup);
-        console.log(`✅ ${newUsers.length} utilisateur(s) ajouté(s) au groupe "public".`);
+        logger.info(`✅ ${newUsers.length} utilisateur(s) ajouté(s) au groupe "public".`);
       } else {
-        console.log('ℹ️ Tous les utilisateurs sont déjà dans le groupe "public".');
+        logger.info('ℹ️ Tous les utilisateurs sont déjà dans le groupe "public".');
       }
     } else {
-      console.log('ℹ️ Aucun utilisateur à ajouter pour le moment.');
+      logger.info('ℹ️ Aucun utilisateur à ajouter pour le moment.');
     }
 
+    // Démarrage du serveur
     app.listen(PORT, () => {
-      console.log(`🚀 Serveur démarré sur le port ${PORT}`);
-      console.log(`📘 Documentation Swagger disponible sur http://localhost:${PORT}/api/docs`);
+      logger.info(`🚀 Serveur démarré sur le port ${PORT}`);
+      logger.info(`📘 Documentation Swagger: http://localhost:${PORT}/api/docs`);
+      logger.info(`🏥 Health check: http://localhost:${PORT}/health`);
+      logger.info(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
+
+      // Log des routes principales pour debug
+      logger.info('📍 Routes disponibles:');
+      logger.info('   POST   /api/users/register');
+      logger.info('   GET    /api/users');
+      logger.info('   GET    /api/users/:id');
+      logger.info('   ... voir /api/docs pour la liste complète');
     });
-  })
-  .catch((error) => {
-    console.error('❌ Erreur lors de l\'initialisation de la base de données:', error);
-  });
+  } catch (error) {
+    logger.error('❌ Erreur lors de l\'initialisation de l\'application:', error);
+    process.exit(1);
+  }
+};
+
+// Gestion des erreurs non gérées
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error: Error) => {
+  logger.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+// Gestion de l'arrêt gracieux
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM reçu, arrêt gracieux...');
+  await AppDataSource.destroy();
+  // await redisClient.quit(); // DISABLED
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT reçu, arrêt gracieux...');
+  await AppDataSource.destroy();
+  // await redisClient.quit(); // DISABLED
+  process.exit(0);
+});
+
+// Démarrer l'application
+initializeApp();
 
 export default app;

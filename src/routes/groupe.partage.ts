@@ -30,6 +30,16 @@ const groupePartageController = new GroupePartageController();
  *       400:
  *         description: Données invalides
  */
+
+/**
+ * GET /api/groupes-partage/all
+ * Récupérer tous les groupes de partage
+ */
+router.get('/',
+    // authMiddleware,
+    groupePartageController.getAllGroupePartage.bind(groupePartageController)
+);
+
 /**
  * POST /api/groupes-partage/custom/create
  * Créer un groupe personnalisé (authentification requise)

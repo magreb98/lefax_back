@@ -20,8 +20,8 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USERNAME || 'root',
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'lefax_db',
-  synchronize: process.env.NODE_ENV === 'development' || false,
-  logging: process.env.NODE_ENV === 'development' || true,
+  synchronize: process.env.NODE_ENV !== 'production', // Désactivé en production pour sécurité
+  logging: process.env.NODE_ENV === 'development',
   entities: [
     User,
     Ecole,

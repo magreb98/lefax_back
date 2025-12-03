@@ -2,9 +2,9 @@ import { AppDataSource } from "../config/database";
 import { User, UserRole } from "../entity/user";
 import { Class } from "../entity/classe";
 import { Ecole } from "../entity/ecole";
-import { GroupePartage } from "../entity/groupe.partage";
 import { GroupePartageService } from "./GroupePartageService";
 import bcrypt from 'bcryptjs';
+import { GroupePartage } from "../entity/groupe.partage";
 
 export class UserService {
     private userRepository = AppDataSource.getRepository(User);
@@ -26,7 +26,6 @@ export class UserService {
         schoolId?: string;
         classeId?: string;
     }): Promise<User> {
-        // Vérifier si l'email existe déjà
         const existingUser = await this.userRepository.findOne({
             where: { email: data.email }
         });
@@ -35,50 +34,26 @@ export class UserService {
             throw new Error('Cet email est déjà enregistré');
         }
 
-        // Récupérer ou créer le groupe public
-        let publicGroup = await this.groupePartageRepository.findOne({
-            where: { name: 'Public' }
-        });
-
-        if (!publicGroup) {
-            publicGroup = await this.groupePartageService.createCustomGroupe(
-                'Public',
-                'Groupe de partage pour tous les utilisateurs'
-            );
-        }
-
-        // Hasher le mot de passe
         const hashedPassword = await bcrypt.hash(data.password, 10);
 
-        // Créer l'utilisateur
         const user = this.userRepository.create({
             firstName: data.firstName,
             lastName: data.lastName,
             email: data.email,
             password: hashedPassword,
             phoneNumber: data.phoneNumber,
-            role: data.role || UserRole.USER,
-            groupesPartage: [publicGroup]
+            role: data.role || UserRole.USER
         });
 
-        // Associer l'école si fournie
         if (data.schoolId) {
-            const school = await this.ecoleRepository.findOne({
-                where: { id: data.schoolId }
-            });
-            if (school) {
-                user.school = school;
-            }
+            const school = await this.ecoleRepository.findOne({ where: { id: data.schoolId } });
+            if (school) user.school = school;
         }
 
-        // Associer la classe si fournie
         if (data.classeId) {
-            const classe = await this.classRepository.findOne({
-                where: { id: data.classeId }
-            });
+            const classe = await this.classRepository.findOne({ where: { id: data.classeId } });
             if (classe) {
                 user.classe = classe;
-                // Si associé à une classe, le rôle devient ETUDIANT
                 if (user.role !== UserRole.ENSEIGNANT) {
                     user.role = UserRole.ETUDIANT;
                 }
@@ -87,130 +62,8 @@ export class UserService {
 
         await this.userRepository.save(user);
 
-        // Synchroniser les groupes de partage si l'utilisateur est dans une classe
         if (data.classeId) {
             await this.groupePartageService.syncClasseGroupePartage(data.classeId);
-        }
-
-        return user;
-    }
-
-    /**
-     * Ajouter un utilisateur à une classe
-     * Son rôle devient automatiquement ETUDIANT
-     */
-    async addUserToClasse(userId: string, classeId: string): Promise<User> {
-        const user = await this.userRepository.findOne({
-            where: { id: userId },
-            relations: ['classe', 'school', 'groupesPartage']
-        });
-
-        if (!user) {
-            throw new Error('Utilisateur non trouvé');
-        }
-
-        const classe = await this.classRepository.findOne({
-            where: { id: classeId },
-            relations: ['groupePartage', 'filiere', 'filiere.school']
-        });
-
-        if (!classe) {
-            throw new Error('Classe non trouvée');
-        }
-
-        // Associer la classe à l'utilisateur
-        user.classe = classe;
-
-        // Changer le rôle en ETUDIANT (sauf si c'est un enseignant)
-        if (user.role !== UserRole.ENSEIGNANT && user.role !== UserRole.ADMIN && user.role !== UserRole.SUPERADMIN) {
-            user.role = UserRole.ETUDIANT;
-        }
-
-        // Associer l'école de la classe si l'utilisateur n'a pas d'école
-        if (!user.school && classe.filiere?.school) {
-            user.school = classe.filiere.school;
-        }
-
-        await this.userRepository.save(user);
-
-        // Synchroniser le groupe de partage de la classe
-        await this.groupePartageService.syncClasseGroupePartage(classeId);
-
-        return user;
-    }
-
-    /**
-     * Ajouter plusieurs utilisateurs à une classe
-     */
-    async addUsersToClasse(userIds: string[], classeId: string): Promise<User[]> {
-        const classe = await this.classRepository.findOne({
-            where: { id: classeId },
-            relations: ['groupePartage', 'filiere', 'filiere.school']
-        });
-
-        if (!classe) {
-            throw new Error('Classe non trouvée');
-        }
-
-        const users = await this.userRepository.findByIds(userIds);
-
-        if (users.length !== userIds.length) {
-            throw new Error('Un ou plusieurs utilisateurs non trouvés');
-        }
-
-        const updatedUsers: User[] = [];
-
-        for (const user of users) {
-            user.classe = classe;
-
-            // Changer le rôle en ETUDIANT
-            if (user.role !== UserRole.ENSEIGNANT && user.role !== UserRole.ADMIN && user.role !== UserRole.SUPERADMIN) {
-                user.role = UserRole.ETUDIANT;
-            }
-
-            // Associer l'école si nécessaire
-            if (!user.school && classe.filiere?.school) {
-                user.school = classe.filiere.school;
-            }
-
-            await this.userRepository.save(user);
-            updatedUsers.push(user);
-        }
-
-        // Synchroniser le groupe de partage de la classe
-        await this.groupePartageService.syncClasseGroupePartage(classeId);
-
-        return updatedUsers;
-    }
-
-    /**
-     * Retirer un utilisateur d'une classe
-     */
-    async removeUserFromClasse(userId: string): Promise<User> {
-        const user = await this.userRepository.findOne({
-            where: { id: userId },
-            relations: ['classe']
-        });
-
-        if (!user) {
-            throw new Error('Utilisateur non trouvé');
-        }
-
-        const classeId = user.classe?.id;
-
-        // Retirer la classe
-        user.classe = undefined;
-
-        // Changer le rôle en USER si c'était un étudiant
-        if (user.role === UserRole.ETUDIANT) {
-            user.role = UserRole.USER;
-        }
-
-        await this.userRepository.save(user);
-
-        // Synchroniser le groupe de partage de la classe
-        if (classeId) {
-            await this.groupePartageService.syncClasseGroupePartage(classeId);
         }
 
         return user;
@@ -228,24 +81,12 @@ export class UserService {
         const query = this.userRepository
             .createQueryBuilder('user')
             .leftJoinAndSelect('user.school', 'school')
-            .leftJoinAndSelect('user.classe', 'classe')
-            .leftJoinAndSelect('user.groupesPartage', 'groupesPartage');
+            .leftJoinAndSelect('user.classe', 'classe');
 
-        if (filters?.role) {
-            query.andWhere('user.role = :role', { role: filters.role });
-        }
-
-        if (filters?.schoolId) {
-            query.andWhere('school.id = :schoolId', { schoolId: filters.schoolId });
-        }
-
-        if (filters?.classeId) {
-            query.andWhere('classe.id = :classeId', { classeId: filters.classeId });
-        }
-
-        if (filters?.isActive !== undefined) {
-            query.andWhere('user.isActive = :isActive', { isActive: filters.isActive });
-        }
+        if (filters?.role) query.andWhere('user.role = :role', { role: filters.role });
+        if (filters?.schoolId) query.andWhere('school.id = :schoolId', { schoolId: filters.schoolId });
+        if (filters?.classeId) query.andWhere('classe.id = :classeId', { classeId: filters.classeId });
+        if (filters?.isActive !== undefined) query.andWhere('user.isActive = :isActive', { isActive: filters.isActive });
 
         return await query.getMany();
     }
@@ -256,7 +97,7 @@ export class UserService {
     async getUserById(id: string): Promise<User | null> {
         return await this.userRepository.findOne({
             where: { id },
-            relations: ['school', 'classe', 'groupesPartage', 'enseignements', 'enseignements.ecole', 'enseignements.classe', 'enseignements.matiere']
+            relations: ['school', 'classe', 'groupesPartage', 'enseignements', 'ecoles']
         });
     }
 
@@ -284,12 +125,8 @@ export class UserService {
         isSuspended?: boolean;
     }): Promise<User> {
         const user = await this.userRepository.findOne({ where: { id } });
+        if (!user) throw new Error('Utilisateur non trouvé');
 
-        if (!user) {
-            throw new Error('Utilisateur non trouvé');
-        }
-
-        // Mettre à jour les champs
         if (data.firstName) user.firstName = data.firstName;
         if (data.lastName) user.lastName = data.lastName;
         if (data.email) user.email = data.email;
@@ -298,13 +135,11 @@ export class UserService {
         if (data.isActive !== undefined) user.isActive = data.isActive;
         if (data.isSuspended !== undefined) user.isSuspended = data.isSuspended;
 
-        // Hasher le nouveau mot de passe si fourni
         if (data.password) {
             user.password = await bcrypt.hash(data.password, 10);
         }
 
-        await this.userRepository.save(user);
-        return user;
+        return await this.userRepository.save(user);
     }
 
     /**
@@ -316,18 +151,71 @@ export class UserService {
             relations: ['classe']
         });
 
-        if (!user) {
-            throw new Error('Utilisateur non trouvé');
-        }
+        if (!user) throw new Error('Utilisateur non trouvé');
 
         const classeId = user.classe?.id;
-
         await this.userRepository.remove(user);
 
-        // Synchroniser le groupe de partage de la classe si nécessaire
         if (classeId) {
             await this.groupePartageService.syncClasseGroupePartage(classeId);
         }
+    }
+
+    /**
+     * Ajouter un utilisateur à une classe
+     */
+    async addUserToClasse(userId: string, classeId: string): Promise<User> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['classe', 'school']
+        });
+        if (!user) throw new Error('Utilisateur non trouvé');
+
+        const classe = await this.classRepository.findOne({
+            where: { id: classeId },
+            relations: ['filiere', 'filiere.school']
+        });
+        if (!classe) throw new Error('Classe non trouvée');
+
+        user.classe = classe;
+        if (user.role !== UserRole.ENSEIGNANT && user.role !== UserRole.ADMIN && user.role !== UserRole.SUPERADMIN) {
+            user.role = UserRole.ETUDIANT;
+        }
+
+        if (!user.school && classe.filiere?.school) {
+            user.school = classe.filiere.school;
+        }
+
+        await this.userRepository.save(user);
+        await this.groupePartageService.syncClasseGroupePartage(classeId);
+
+        return user;
+    }
+
+    /**
+     * Retirer un utilisateur d'une classe
+     */
+    async removeUserFromClasse(userId: string): Promise<User> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['classe']
+        });
+        if (!user) throw new Error('Utilisateur non trouvé');
+
+        const classeId = user.classe?.id;
+        user.classe = undefined;
+
+        if (user.role === UserRole.ETUDIANT) {
+            user.role = UserRole.USER;
+        }
+
+        await this.userRepository.save(user);
+
+        if (classeId) {
+            await this.groupePartageService.syncClasseGroupePartage(classeId);
+        }
+
+        return user;
     }
 
     /**
@@ -371,15 +259,10 @@ export class UserService {
      */
     async toggleUserStatus(id: string): Promise<User> {
         const user = await this.userRepository.findOne({ where: { id } });
-
-        if (!user) {
-            throw new Error('Utilisateur non trouvé');
-        }
+        if (!user) throw new Error('Utilisateur non trouvé');
 
         user.isActive = !user.isActive;
-        await this.userRepository.save(user);
-
-        return user;
+        return await this.userRepository.save(user);
     }
 
     /**
@@ -387,60 +270,22 @@ export class UserService {
      */
     async toggleUserSuspension(id: string): Promise<User> {
         const user = await this.userRepository.findOne({ where: { id } });
-
-        if (!user) {
-            throw new Error('Utilisateur non trouvé');
-        }
+        if (!user) throw new Error('Utilisateur non trouvé');
 
         user.isSuspended = !user.isSuspended;
-        await this.userRepository.save(user);
-
-        return user;
+        return await this.userRepository.save(user);
     }
 
     /**
      * Nommer un étudiant délégué ou le destituer
      */
-    async toggleUserDelegate(id: string):Promise<User>{
-         const user = await this.userRepository.findOne({ where: { id } });
+    async toggleUserDelegate(id: string): Promise<User> {
+        const user = await this.userRepository.findOne({ where: { id } });
+        if (!user) throw new Error('Utilisateur non trouvé');
+        if (!user.classe) throw new Error('L\'utilisateur doit appartenir à une salle de classe');
 
-        if (!user) {
-            throw new Error('Utilisateur non trouvé');
-        }
-       if(!user.classe){
-        throw new Error('L\'utilisateur doit appartenir à une salle de classe')
-       }
         user.isDelegate = !user.isDelegate;
-        await this.userRepository.save(user);
-
-        return user;
-    }
-
-    /**
-     * Changer l'école d'un utilisateur
-     */
-    async changeUserSchool(userId: string, schoolId: string): Promise<User> {
-        const user = await this.userRepository.findOne({
-            where: { id: userId },
-            relations: ['school']
-        });
-
-        if (!user) {
-            throw new Error('Utilisateur non trouvé');
-        }
-
-        const school = await this.ecoleRepository.findOne({
-            where: { id: schoolId }
-        });
-
-        if (!school) {
-            throw new Error('École non trouvée');
-        }
-
-        user.school = school;
-        await this.userRepository.save(user);
-
-        return user;
+        return await this.userRepository.save(user);
     }
 
     /**
@@ -452,49 +297,194 @@ export class UserService {
             relations: ['groupesPartage', 'classe', 'classe.groupePartage', 'school', 'school.groupePartage']
         });
 
-        if (!user) {
-            return false;
-        }
+        if (!user) return false;
 
-        // Récupérer tous les IDs des groupes de l'utilisateur
         const userGroupeIds: string[] = [];
-
         if (user.groupesPartage) {
             user.groupesPartage.forEach(g => userGroupeIds.push(g.id));
         }
+        if (user.classe?.groupePartage) userGroupeIds.push(user.classe.groupePartage.id);
+        if (user.school?.groupePartage) userGroupeIds.push(user.school.groupePartage.id);
 
-        if (user.classe?.groupePartage) {
-            userGroupeIds.push(user.classe.groupePartage.id);
-        }
-
-        if (user.school?.groupePartage) {
-            userGroupeIds.push(user.school.groupePartage.id);
-        }
-
-        // Vérifier si l'utilisateur a accès à au moins un des groupes de la ressource
         return resourceGroupeIds.some(id => userGroupeIds.includes(id));
     }
 
+    // ==================== NOUVELLES MÉTHODES POUR LA GESTION DES DROITS ====================
 
     /**
-     * Definir un utilisateur en tant qu'Admin d'une école
+     * Donner le droit de créer une école à un utilisateur (SUPERADMIN only)
      */
+    async grantSchoolCreationRight(userId: string): Promise<User> {
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) throw new Error('Utilisateur non trouvé');
+        if (user.canCreateSchool) throw new Error('Cet utilisateur a déjà le droit de créer une école');
 
-    async setAdminSchool(idUser: string, idSchool: string):Promise<void>{
-        try {
-            const user = await this.userRepository.findOne({where:{id: idUser}});
-
-            if(!user){
-                throw new Error('Utilisateur non trouvé');
-            }
-
-            const schooll = await this.ecoleRepository.findOne({where:{id: idSchool}});
-
-            if(!schooll){
-                throw new Error("Ecolr non ")
-            }
-        } catch (error) {
-            
-        }
+        user.canCreateSchool = true;
+        return await this.userRepository.save(user);
     }
+
+    /**
+     * Révoquer le droit de créer une école (SUPERADMIN only)
+     */
+    async revokeSchoolCreationRight(userId: string): Promise<User> {
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) throw new Error('Utilisateur non trouvé');
+        if (!user.canCreateSchool) throw new Error('Cet utilisateur n\'a pas le droit de créer une école');
+
+        user.canCreateSchool = false;
+        return await this.userRepository.save(user);
+    }
+
+    /**
+     * Promouvoir un utilisateur en ADMIN d'une école
+     * Un utilisateur ne peut être admin que d'UNE SEULE école
+     */
+    async promoteToAdmin(userId: string, ecoleId: string): Promise<User> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['ecoles']
+        });
+        if (!user) throw new Error('Utilisateur non trouvé');
+
+        // Vérifier que l'utilisateur n'est pas déjà admin d'une autre école
+        if (user.ecoles && user.ecoles.length > 0) {
+            throw new Error('Cet utilisateur est déjà administrateur d\'une école. Un utilisateur ne peut être admin que d\'une seule école.');
+        }
+
+        const ecole = await this.ecoleRepository.findOne({
+            where: { id: ecoleId },
+            relations: ['schoolAdmin']
+        });
+        if (!ecole) throw new Error('École non trouvée');
+
+        // Vérifier que l'école n'a pas déjà un admin différent
+        if (ecole.schoolAdmin && ecole.schoolAdmin.id !== userId) {
+            throw new Error('Cette école a déjà un administrateur');
+        }
+
+        // Promouvoir l'utilisateur
+        user.role = UserRole.ADMIN;
+        user.school = ecole;
+        await this.userRepository.save(user);
+
+        // Associer l'utilisateur comme admin de l'école
+        ecole.schoolAdmin = user;
+        await this.ecoleRepository.save(ecole);
+
+        return user;
+    }
+
+    /**
+     * Rétrograder un ADMIN en USER
+     */
+    async demoteFromAdmin(userId: string): Promise<User> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['ecoles', 'school']
+        });
+        if (!user) throw new Error('Utilisateur non trouvé');
+        if (user.role !== UserRole.ADMIN) throw new Error('Cet utilisateur n\'est pas administrateur');
+
+        // Retirer le rôle ADMIN
+        user.role = UserRole.USER;
+        user.school = undefined;
+        await this.userRepository.save(user);
+
+        // Retirer l'utilisateur comme admin des écoles
+        if (user.ecoles && user.ecoles.length > 0) {
+            for (const ecole of user.ecoles) {
+                ecole.schoolAdmin = null as any;
+                await this.ecoleRepository.save(ecole);
+            }
+        }
+
+        return user;
+    }
+
+    /**
+     * Vérifier si un utilisateur peut créer une école
+     */
+    async canCreateSchool(userId: string): Promise<boolean> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            select: ['id', 'canCreateSchool']
+        });
+
+        return user ? user.canCreateSchool : false;
+    }
+
+    /**
+     * Vérifier si un utilisateur est admin d'une école spécifique
+     */
+    async isSchoolAdmin(userId: string, ecoleId: string): Promise<boolean> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['ecoles']
+        });
+
+        if (!user || user.role !== UserRole.ADMIN || !user.ecoles) return false;
+
+        return user.ecoles.some(ecole => ecole.id === ecoleId);
+    }
+
+    /**
+ * Ajouter plusieurs utilisateurs à une classe
+ */
+async addUsersToClasse(userIds: string[], classeId: string): Promise<User[]> {
+    const classe = await this.classRepository.findOne({
+        where: { id: classeId },
+        relations: ['filiere', 'filiere.school']
+    });
+    if (!classe) throw new Error('Classe non trouvée');
+
+    const users: User[] = [];
+
+    for (const userId of userIds) {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['classe', 'school']
+        });
+        
+        if (!user) {
+            console.warn(`Utilisateur ${userId} non trouvé, ignoré`);
+            continue;
+        }
+
+        user.classe = classe;
+        if (user.role !== UserRole.ENSEIGNANT && user.role !== UserRole.ADMIN && user.role !== UserRole.SUPERADMIN) {
+            user.role = UserRole.ETUDIANT;
+        }
+
+        if (!user.school && classe.filiere?.school) {
+            user.school = classe.filiere.school;
+        }
+
+        await this.userRepository.save(user);
+        users.push(user);
+    }
+
+    // Synchroniser le groupe de partage une seule fois après avoir ajouté tous les utilisateurs
+    await this.groupePartageService.syncClasseGroupePartage(classeId);
+
+    return users;
+}
+
+/**
+ * Changer l'école d'un utilisateur
+ */
+async changeUserSchool(userId: string, schoolId: string): Promise<User> {
+    const user = await this.userRepository.findOne({
+        where: { id: userId },
+        relations: ['school']
+    });
+    if (!user) throw new Error('Utilisateur non trouvé');
+
+    const school = await this.ecoleRepository.findOne({
+        where: { id: schoolId }
+    });
+    if (!school) throw new Error('École non trouvée');
+
+    user.school = school;
+    return await this.userRepository.save(user);
+}
 }

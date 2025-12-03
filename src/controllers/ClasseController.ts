@@ -16,13 +16,13 @@ export class ClasseController {
             const { className, filiereId } = req.body;
 
             if (!className || !filiereId) {
-                return res.status(400).json({ 
-                    message: 'Les champs className et filiereId sont requis' 
+                return res.status(400).json({
+                    message: 'Les champs className et filiereId sont requis'
                 });
             }
 
             // Vérifier que la filière existe
-            const filiere = await this.filiereRepository.findOne({ 
+            const filiere = await this.filiereRepository.findOne({
                 where: { id: filiereId },
                 relations: ['school']
             });
@@ -43,9 +43,9 @@ export class ClasseController {
                 await this.groupePartageService.syncEcoleGroupePartage(filiere.school.id);
             }
 
-            res.status(201).json({ 
-                message: 'Classe créée avec succès', 
-                classe 
+            res.status(201).json({
+                message: 'Classe créée avec succès',
+                classe
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -53,17 +53,36 @@ export class ClasseController {
         }
     }
 
-    // Récupérer toutes les classes
+    // Récupérer toutes les classes avec filtrage optionnel
     async getClasses(req: any, res: any): Promise<void> {
         try {
-            const classes = await this.classeRepository.find({
-                relations: ['groupePartage', 'groupePartage.users', 'filiere', 'filiere.school'],
-                order: { createdAt: 'DESC' }
-            });
+            const { filiereId, ecoleId } = req.query;
 
-            res.status(200).json({ 
+            // Construction dynamique de la requête
+            const queryBuilder = this.classeRepository.createQueryBuilder('classe')
+                .leftJoinAndSelect('classe.groupePartage', 'groupePartage')
+                .leftJoinAndSelect('groupePartage.users', 'users')
+                .leftJoinAndSelect('classe.filiere', 'filiere')
+                .leftJoinAndSelect('filiere.school', 'school')
+                .leftJoinAndSelect('classe.etudiants', 'etudiants')
+                .leftJoinAndSelect('classe.matieres', 'matieres')
+                .orderBy('classe.createdAt', 'DESC');
+
+            // Filtrer par filière si spécifié
+            if (filiereId) {
+                queryBuilder.andWhere('filiere.id = :filiereId', { filiereId });
+            }
+
+            // Filtrer par école si spécifié
+            if (ecoleId) {
+                queryBuilder.andWhere('school.id = :ecoleId', { ecoleId });
+            }
+
+            const classes = await queryBuilder.getMany();
+
+            res.status(200).json({
                 count: classes.length,
-                classes 
+                classes
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -98,8 +117,8 @@ export class ClasseController {
 
             await this.groupePartageService.syncClasseGroupePartage(id);
 
-            res.status(200).json({ 
-                message: 'Groupe de partage synchronisé avec succès' 
+            res.status(200).json({
+                message: 'Groupe de partage synchronisé avec succès'
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -123,9 +142,9 @@ export class ClasseController {
 
             await this.classeRepository.save(classe);
 
-            res.status(200).json({ 
-                message: 'Classe mise à jour avec succès', 
-                classe 
+            res.status(200).json({
+                message: 'Classe mise à jour avec succès',
+                classe
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -137,7 +156,7 @@ export class ClasseController {
     async deleteClasse(req: any, res: any): Promise<void> {
         try {
             const { id } = req.params;
-            const classe = await this.classeRepository.findOne({ 
+            const classe = await this.classeRepository.findOne({
                 where: { id },
                 relations: ['groupePartage', 'filiere', 'filiere.school']
             });
@@ -164,54 +183,221 @@ export class ClasseController {
         }
     }
 
-     /**
-       * Ajouter une classe à un groupe
-       * POST /api/users/groupes/:groupeId/classes/:classeId
-       */
-      async addClasseToGroupe(req: Request, res: Response): Promise < void> {
-      try {
-        const { groupeId, classeId } = req.params;
-    
-        await this.groupePartageService.addClasseToGroupe(classeId, groupeId);
-    
-        res.json({ message: 'Classe ajoutée au groupe avec succès' });
-      } catch(error) {
-        console.error('Erreur lors de l\'ajout de la classe au groupe:', error);
-        res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de l\'ajout de la classe au groupe' });
-      }
+    /**
+     * Récupérer tous les étudiants d'une classe
+     * GET /api/classes/:id/students
+     */
+    async getStudentsByClasse(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+
+            const classe = await this.classeRepository.findOne({
+                where: { id },
+                relations: ['etudiants', 'etudiants.classe']
+            });
+
+            if (!classe) {
+             res.status(404).json({ message: 'Classe non trouvée' });
+             return;
+            }
+
+            res.status(200).json({
+                count: classe.etudiants?.length || 0,
+                students: classe.etudiants || []
+            });
+        } catch (error) {
+            console.error('Erreur lors de la récupération des étudiants:', error);
+            res.status(500).json({ message: 'Erreur serveur' });
+        }
     }
-    
-      /**
-       * Retirer une classe d'un groupe
-       * DELETE /api/users/groupes/:groupeId/classes/:classeId
-       */
-      async removeClasseFromGroupe(req: Request, res: Response): Promise < void> {
-      try {
-        const { groupeId, classeId } = req.params;
-    
-        await this.groupePartageService.removeClasseFromGroupe(classeId, groupeId);
-    
-        res.json({ message: 'Classe retirée du groupe avec succès' });
-      } catch(error) {
-        console.error('Erreur lors du retrait de la classe du groupe:', error);
-        res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors du retrait de la classe du groupe' });
-      }
+
+    /**
+     * Récupérer toutes les matières d'une classe
+     * GET /api/classes/:id/matieres
+     */
+    async getMatieresByClasse(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+
+            const classe = await this.classeRepository.findOne({
+                where: { id },
+                relations: ['matieres', 'matieres.documents']
+            });
+
+            if (!classe) {
+                res.status(404).json({ message: 'Classe non trouvée' });
+                return;
+            }
+
+            res.status(200).json({
+                count: classe.matieres?.length || 0,
+                matieres: classe.matieres || []
+            });
+        } catch (error) {
+            console.error('Erreur lors de la récupération des matières:', error);
+            res.status(500).json({ message: 'Erreur serveur' });
+        }
     }
-    
-      /**
-       * Synchroniser le groupe de partage d'une classe
-       * POST /api/users/groupes/sync/classe/:classeId
-       */
-      async syncClasseGroupePartage(req: Request, res: Response): Promise < void> {
-      try {
-        const { classeId } = req.params;
-    
-        await this.groupePartageService.syncClasseGroupePartage(classeId);
-    
-        res.json({ message: 'Groupe de la classe synchronisé avec succès' });
-      } catch(error) {
-        console.error('Erreur lors de la synchronisation du groupe de la classe:', error);
-        res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de la synchronisation du groupe de la classe' });
-      }
+
+    /**
+     * Promouvoir un étudiant comme délégué de classe
+     * POST /api/classes/:classeId/delegate/:userId
+     */
+    async setDelegate(req: Request, res: Response): Promise<void> {
+        try {
+            const { classeId, userId } = req.params;
+            const userRepository = AppDataSource.getRepository(require('../entity/user').User);
+
+            // Vérifier que la classe existe
+            const classe = await this.classeRepository.findOne({
+                where: { id: classeId }
+            });
+
+            if (!classe) {
+                res.status(404).json({ message: 'Classe non trouvée' });
+                return;
+            }
+
+            // Vérifier que l'utilisateur existe et est étudiant de cette classe
+            const user = await userRepository.findOne({
+                where: { id: userId },
+                relations: ['classe']
+            });
+
+            if (!user) {
+                res.status(404).json({ message: 'Utilisateur non trouvé' });
+                return;
+            }
+
+            if (!user.classe || user.classe.id !== classeId) {
+                res.status(400).json({
+                    message: 'L\'utilisateur n\'est pas étudiant de cette classe'
+                });
+            }
+
+            // Promouvoir comme délégué
+            user.isDelegate = true;
+            await userRepository.save(user);
+
+            res.status(200).json({
+                message: 'Étudiant promu comme délégué avec succès',
+                user: {
+                    id: user.id,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    isDelegate: user.isDelegate
+                }
+            });
+        } catch (error) {
+            console.error('Erreur lors de la promotion du délégué:', error);
+            res.status(500).json({ message: 'Erreur serveur' });
+        }
+    }
+
+    /**
+     * Révoquer le statut de délégué d'un étudiant
+     * DELETE /api/classes/:classeId/delegate/:userId
+     */
+    async removeDelegate(req: Request, res: Response): Promise<void> {
+        try {
+            const { classeId, userId } = req.params;
+            const userRepository = AppDataSource.getRepository(require('../entity/user').User);
+
+            // Vérifier que la classe existe
+            const classe = await this.classeRepository.findOne({
+                where: { id: classeId }
+            });
+
+            if (!classe) {
+                res.status(404).json({ message: 'Classe non trouvée' });
+                return;
+            }
+
+            // Vérifier que l'utilisateur existe
+            const user = await userRepository.findOne({
+                where: { id: userId },
+                relations: ['classe']
+            });
+
+            if (!user) {
+                res.status(404).json({ message: 'Utilisateur non trouvé' });
+                return;
+            }
+
+            if (!user.classe || user.classe.id !== classeId) {
+                 res.status(400).json({
+                    message: 'L\'utilisateur n\'est pas étudiant de cette classe'
+                });
+                return;
+            }
+
+            // Révoquer le statut de délégué
+            user.isDelegate = false;
+            await userRepository.save(user);
+
+            res.status(200).json({
+                message: 'Statut de délégué révoqué avec succès',
+                user: {
+                    id: user.id,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    isDelegate: user.isDelegate
+                }
+            });
+        } catch (error) {
+            console.error('Erreur lors de la révocation du délégué:', error);
+            res.status(500).json({ message: 'Erreur serveur' });
+        }
+    }
+
+    /**
+      * Ajouter une classe à un groupe
+      * POST /api/users/groupes/:groupeId/classes/:classeId
+      */
+    async addClasseToGroupe(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, classeId } = req.params;
+
+            await this.groupePartageService.addClasseToGroupe(classeId, groupeId);
+
+            res.json({ message: 'Classe ajoutée au groupe avec succès' });
+        } catch (error) {
+            console.error('Erreur lors de l\'ajout de la classe au groupe:', error);
+            res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de l\'ajout de la classe au groupe' });
+        }
+    }
+
+    /**
+     * Retirer une classe d'un groupe
+     * DELETE /api/users/groupes/:groupeId/classes/:classeId
+     */
+    async removeClasseFromGroupe(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, classeId } = req.params;
+
+            await this.groupePartageService.removeClasseFromGroupe(classeId, groupeId);
+
+            res.json({ message: 'Classe retirée du groupe avec succès' });
+        } catch (error) {
+            console.error('Erreur lors du retrait de la classe du groupe:', error);
+            res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors du retrait de la classe du groupe' });
+        }
+    }
+
+    /**
+     * Synchroniser le groupe de partage d'une classe
+     * POST /api/users/groupes/sync/classe/:classeId
+     */
+    async syncClasseGroupePartage(req: Request, res: Response): Promise<void> {
+        try {
+            const { classeId } = req.params;
+
+            await this.groupePartageService.syncClasseGroupePartage(classeId);
+
+            res.json({ message: 'Groupe de la classe synchronisé avec succès' });
+        } catch (error) {
+            console.error('Erreur lors de la synchronisation du groupe de la classe:', error);
+            res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de la synchronisation du groupe de la classe' });
+        }
     }
 }

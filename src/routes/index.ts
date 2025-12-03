@@ -7,8 +7,9 @@ import ecoleRoutes from './ecoles';
 import filiereRoutes from './filieres';
 import classeRoutes from './classes';
 import groupeRoutes from './groupe.partage';
-
-const router =  Router();
+import notificationRoutes from './notifications';
+import matiereRoutes from './matieres';
+const router = Router();
 
 /**
  * @swagger
@@ -30,6 +31,8 @@ router.use('/documents', documentRoutes);
 router.use('/ecoles', ecoleRoutes);
 router.use('/filieres', filiereRoutes);
 router.use('/classes', classeRoutes);
-router.use('/groupes', groupeRoutes)
+router.use('/groupes', groupeRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/matieres', matiereRoutes);
 
 export default router;

@@ -1,10 +1,32 @@
 import { Request, Response } from 'express';
 import { GroupePartageService } from '../services/GroupePartageService';
-import { TypeGroupePartage, GroupePartage } from '../entity/groupe.partage';
+import { GroupePartageType, GroupePartage } from '../entity/groupe.partage';
 import { AppDataSource } from '../config/database';
 
 export class GroupePartageController {
     private groupePartageService = new GroupePartageService();
+
+
+    /**
+     * Récupérer tous les groupes de partages
+     */
+   async getAllGroupePartage(req: Request, res: Response): Promise<void> {
+        try {
+            const groupesPartages = await this.groupePartageService.getAllGroupePartage();
+
+            res.status(200).json({
+                message: 'Groupes de partage récupérés avec succès',
+                groupesPartages
+            });
+        } catch (error: any) {
+            console.error('Erreur lors de la récupération des groupes de partage:', error);
+            res.status(400).json({
+                message: 'Erreur lors de la récupération des groupes de partage',
+                error: error.message
+            });
+        }
+    }
+
 
     // ========== SYNCHRONISATION ==========
 
@@ -482,7 +504,7 @@ export class GroupePartageController {
         try {
             // Vérifier que l'utilisateur est authentifié
             if (!(req as any).user || !(req as any).userId) {
-                res.status(401).json({ 
+                res.status(401).json({
                     message: 'Utilisateur non authentifié',
                     error: 'NOT_AUTHENTICATED'
                 });
@@ -513,7 +535,7 @@ export class GroupePartageController {
                 message: 'Groupe personnalisé créé avec succès',
                 groupe: {
                     id: groupe.id,
-                    name: groupe.name,
+                    name: groupe.groupeName,
                     description: groupe.description,
                     type: groupe.type,
                     owner: {

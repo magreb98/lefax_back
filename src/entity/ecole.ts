@@ -1,9 +1,9 @@
 import { Column, Entity, JoinColumn, ManyToOne, OneToMany, OneToOne, PrimaryGeneratedColumn } from "typeorm";
 import { User } from "./user";
 import { Filiere } from "./filiere";
-import { GroupePartage } from "./groupe.partage";
 import { EnseignementAssignment } from "./enseignement.assigment";
 import { ApiProperty } from '@nestjs/swagger';
+import { GroupePartage } from "./groupe.partage";
 
 
 @Entity()

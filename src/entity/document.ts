@@ -3,8 +3,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Column, Entity, JoinColumn, JoinTable, ManyToMany, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
 import { DocumentCategorie } from "./document.categorie";
 import { User } from "./user";
-import { Matiere } from "./matiere";
-import { GroupePartage } from "./groupe.partage";
+import { Matiere } from './matiere';
+import { GroupePartage } from './groupe.partage';
 
 @Entity()
 export class Document {

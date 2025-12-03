@@ -1,10 +1,10 @@
 import { AppDataSource } from "../config/database";
-import { GroupePartage, TypeGroupePartage } from "../entity/groupe.partage";
 import { Ecole } from "../entity/ecole";
 import { Filiere } from "../entity/filiere";
 import { Class } from "../entity/classe";
 import { User, UserRole } from "../entity/user";
 import { EnseignementAssignment } from "../entity/enseignement.assigment";
+import { GroupePartage, GroupePartageType } from "../entity/groupe.partage";
 
 
 export class GroupePartageService {
@@ -14,6 +14,18 @@ export class GroupePartageService {
     private classRepository = AppDataSource.getRepository(Class);
     private userRepository = AppDataSource.getRepository(User);
     private enseignementRepository = AppDataSource.getRepository(EnseignementAssignment);
+
+
+    /**
+     * Récupérer un groupe de partage par son ID
+     */
+    // async getGroupePartage(id: string): Promise<GroupePartage> {
+    //     return this.groupePartageRepository.findOne({ where: { id } });
+    // }
+
+    async getAllGroupePartage(): Promise<GroupePartage[]> {
+        return this.groupePartageRepository.find();
+    }
 
     /**
      * Synchroniser les utilisateurs d'une classe avec son groupe de partage
@@ -202,9 +214,9 @@ export class GroupePartageService {
     async createEcoleWithGroupe(ecoleData: Partial<Ecole>): Promise<Ecole> {
         // Créer le groupe de partage
         const groupePartage = this.groupePartageRepository.create({
-            name: `Groupe ${ecoleData.schoolName}`,
+            groupeName: `Groupe ${ecoleData.schoolName}`,
             description: `Groupe de partage de l'école ${ecoleData.schoolName}`,
-            type: TypeGroupePartage.ECOLE,
+            type: GroupePartageType.SCHOOL,
             users: []
         });
         await this.groupePartageRepository.save(groupePartage);
@@ -225,9 +237,9 @@ export class GroupePartageService {
     async createFiliereWithGroupe(filiereData: Partial<Filiere>): Promise<Filiere> {
         // Créer le groupe de partage
         const groupePartage = this.groupePartageRepository.create({
-            name: `Groupe ${filiereData.name}`,
+            groupeName: `Groupe ${filiereData.name}`,
             description: `Groupe de partage de la filière ${filiereData.name}`,
-            type: TypeGroupePartage.FILIERE,
+            type: GroupePartageType.FILIERE,
             users: []
         });
         await this.groupePartageRepository.save(groupePartage);
@@ -248,9 +260,9 @@ export class GroupePartageService {
     async createClasseWithGroupe(classeData: Partial<Class>): Promise<Class> {
         // Créer le groupe de partage
         const groupePartage = this.groupePartageRepository.create({
-            name: `Groupe ${classeData.className}`,
+            groupeName: `Groupe ${classeData.className}`,
             description: `Groupe de partage de la classe ${classeData.className}`,
-            type: TypeGroupePartage.CLASSE,
+            type: GroupePartageType.CLASS,
             users: []
         });
         await this.groupePartageRepository.save(groupePartage);
@@ -300,9 +312,9 @@ export class GroupePartageService {
         const users = await this.userRepository.findByIds(userIds);
 
         const groupe = this.groupePartageRepository.create({
-            name,
+            groupeName: name,
             description,
-            type: TypeGroupePartage.CUSTOM,
+            type: GroupePartageType.CUSTOM,
             users
         });
 
