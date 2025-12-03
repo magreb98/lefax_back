@@ -2,6 +2,9 @@ import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, ManyToMany, JoinColu
 import { User } from './user';
 import { Document } from './document';
 import { Class } from './classe';
+import { Ecole } from './ecole';
+import { Filiere } from './filiere';
+import { Matiere } from './matiere';
 import { ApiProperty } from '@nestjs/swagger';
 import { Notification } from './notification';
 
@@ -70,6 +73,21 @@ export class GroupePartage {
     @OneToOne(() => Class, classe => classe.groupePartage, { nullable: true })
     @ApiProperty({ description: 'Class associated with this groupe partage' })
     classe?: Class;
+
+    // École associée (si c'est un groupe d'école)
+    @OneToOne(() => Ecole, ecole => ecole.groupePartage, { nullable: true })
+    @ApiProperty({ description: 'School associated with this groupe partage' })
+    ecole?: Ecole;
+
+    // Filière associée (si c'est un groupe de filière)
+    @OneToOne(() => Filiere, filiere => filiere.groupePartage, { nullable: true })
+    @ApiProperty({ description: 'Filiere associated with this groupe partage' })
+    filiere?: Filiere;
+
+    // Matière associée (si c'est un groupe de matière)
+    @OneToOne(() => Matiere, matiere => matiere.groupePartage, { nullable: true })
+    @ApiProperty({ description: 'Matiere associated with this groupe partage' })
+    matiere?: Matiere;
 
     // Token d'invitation pour rejoindre le groupe
     @Column({ nullable: true })

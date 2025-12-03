@@ -28,6 +28,35 @@ export class GroupePartageService {
     }
 
     /**
+     * Récupérer un groupe de partage par son ID avec tous ses détails
+     */
+    async getGroupeById(id: string): Promise<GroupePartage> {
+        const groupe = await this.groupePartageRepository.findOne({
+            where: { id },
+            relations: [
+                'users',
+                'users.classe',
+                'users.school',
+                'owner',
+                'documents',
+                'documents.categorie',
+                'documents.addedBy',
+                'allowedPublishers',
+                'ecole',
+                'filiere',
+                'classe',
+                'matiere'
+            ]
+        });
+
+        if (!groupe) {
+            throw new Error('Groupe de partage non trouvé');
+        }
+
+        return groupe;
+    }
+
+    /**
      * Synchroniser les utilisateurs d'une classe avec son groupe de partage
      * Inclut les étudiants ET les enseignants affectés à cette classe
      */
@@ -43,7 +72,7 @@ export class GroupePartageService {
 
         // Récupérer tous les étudiants de la classe
         const etudiants = await this.userRepository.find({
-            where: { 
+            where: {
                 classe: { id: classeId },
                 role: UserRole.ETUDIANT
             }
@@ -51,7 +80,7 @@ export class GroupePartageService {
 
         // Récupérer tous les enseignants affectés à cette classe
         const enseignements = await this.enseignementRepository.find({
-            where: { 
+            where: {
                 classe: { id: classeId },
                 isActive: true
             },
@@ -142,7 +171,7 @@ export class GroupePartageService {
 
         // Récupérer tous les étudiants de l'école
         const etudiants = await this.userRepository.find({
-            where: { 
+            where: {
                 school: { id: ecoleId },
                 role: UserRole.ETUDIANT
             }
@@ -150,7 +179,7 @@ export class GroupePartageService {
 
         // Récupérer tous les enseignants affectés à cette école
         const enseignements = await this.enseignementRepository.find({
-            where: { 
+            where: {
                 ecole: { id: ecoleId },
                 isActive: true
             },
@@ -328,7 +357,7 @@ export class GroupePartageService {
      */
     async getEnseignantGroupes(enseignantId: string): Promise<GroupePartage[]> {
         const enseignements = await this.enseignementRepository.find({
-            where: { 
+            where: {
                 enseignant: { id: enseignantId },
                 isActive: true
             },
@@ -392,7 +421,7 @@ export class GroupePartageService {
 
         // Récupérer tous les étudiants de l'école
         const etudiants = await this.userRepository.find({
-            where: { 
+            where: {
                 school: { id: ecoleId },
                 role: UserRole.ETUDIANT
             }
@@ -400,7 +429,7 @@ export class GroupePartageService {
 
         // Récupérer tous les enseignants affectés à cette école
         const enseignements = await this.enseignementRepository.find({
-            where: { 
+            where: {
                 ecole: { id: ecoleId },
                 isActive: true
             },
@@ -504,7 +533,7 @@ export class GroupePartageService {
 
         // Récupérer tous les étudiants de la classe
         const etudiants = await this.userRepository.find({
-            where: { 
+            where: {
                 classe: { id: classeId },
                 role: UserRole.ETUDIANT
             }
@@ -512,7 +541,7 @@ export class GroupePartageService {
 
         // Récupérer tous les enseignants affectés à cette classe
         const enseignements = await this.enseignementRepository.find({
-            where: { 
+            where: {
                 classe: { id: classeId },
                 isActive: true
             },
@@ -621,13 +650,13 @@ export class GroupePartageService {
 
         // Récupérer tous les utilisateurs de l'école
         const etudiants = await this.userRepository.find({
-            where: { 
+            where: {
                 school: { id: ecoleId }
             }
         });
 
         const enseignements = await this.enseignementRepository.find({
-            where: { 
+            where: {
                 ecole: { id: ecoleId },
                 isActive: true
             },
@@ -701,13 +730,13 @@ export class GroupePartageService {
 
         // Récupérer tous les utilisateurs de la classe
         const etudiants = await this.userRepository.find({
-            where: { 
+            where: {
                 classe: { id: classeId }
             }
         });
 
         const enseignements = await this.enseignementRepository.find({
-            where: { 
+            where: {
                 classe: { id: classeId },
                 isActive: true
             },

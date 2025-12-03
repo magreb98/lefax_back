@@ -10,7 +10,7 @@ export class GroupePartageController {
     /**
      * Récupérer tous les groupes de partages
      */
-   async getAllGroupePartage(req: Request, res: Response): Promise<void> {
+    async getAllGroupePartage(req: Request, res: Response): Promise<void> {
         try {
             const groupesPartages = await this.groupePartageService.getAllGroupePartage();
 
@@ -22,6 +22,30 @@ export class GroupePartageController {
             console.error('Erreur lors de la récupération des groupes de partage:', error);
             res.status(400).json({
                 message: 'Erreur lors de la récupération des groupes de partage',
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Récupérer un groupe de partage par son ID avec tous ses détails
+     * GET /api/groupes/:id
+     */
+    async getGroupeById(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+
+            const groupe = await this.groupePartageService.getGroupeById(id);
+
+            res.status(200).json({
+                message: 'Groupe de partage récupéré avec succès',
+                groupe
+            });
+        } catch (error: any) {
+            console.error('Erreur lors de la récupération du groupe:', error);
+            const statusCode = error.message === 'Groupe de partage non trouvé' ? 404 : 400;
+            res.status(statusCode).json({
+                message: error.message || 'Erreur lors de la récupération du groupe',
                 error: error.message
             });
         }

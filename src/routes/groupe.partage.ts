@@ -41,6 +41,12 @@ router.get('/',
 );
 
 /**
+ * GET /api/groupes/:id
+ * Récupérer un groupe de partage par son ID
+ */
+router.get('/:id', groupePartageController.getGroupeById.bind(groupePartageController));
+
+/**
  * POST /api/groupes-partage/custom/create
  * Créer un groupe personnalisé (authentification requise)
  * L'utilisateur connecté est automatiquement le propriétaire
