@@ -624,4 +624,229 @@ export class GroupePartageController {
             });
         }
     }
+
+    // ========== GESTION AVANCÉE (Membres, Publishers, Documents, Invitations) ==========
+
+    /**
+     * Ajouter un membre à un groupe (via ID dans URL)
+     * POST /api/groupes-partage/:groupeId/members
+     */
+    async addMemberToGroupe(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId } = req.params;
+            const { userId } = req.body;
+
+            if (!userId) {
+                res.status(400).json({ message: 'userId requis' });
+                return;
+            }
+
+            await this.groupePartageService.addUserToCustomGroupe(userId, groupeId);
+            res.status(200).json({ message: 'Membre ajouté avec succès' });
+        } catch (error: any) {
+            console.error('Erreur ajout membre:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Retirer un membre d'un groupe (via ID dans URL)
+     * DELETE /api/groupes-partage/:groupeId/members/:userId
+     */
+    async removeMemberFromGroupe(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, userId } = req.params;
+            await this.groupePartageService.removeUserFromGroupe(userId, groupeId);
+            res.status(200).json({ message: 'Membre retiré avec succès' });
+        } catch (error: any) {
+            console.error('Erreur retrait membre:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Ajouter un éditeur (publisher)
+     * POST /api/groupes-partage/:groupeId/publishers
+     */
+    async addPublisher(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId } = req.params;
+            const { userId } = req.body;
+
+            if (!userId) {
+                res.status(400).json({ message: 'userId requis' });
+                return;
+            }
+
+            await this.groupePartageService.addPublisher(groupeId, userId);
+            res.status(200).json({ message: 'Éditeur ajouté avec succès' });
+        } catch (error: any) {
+            console.error('Erreur ajout éditeur:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Générer une invitation
+     * POST /api/groupes-partage/:groupeId/invitation
+     */
+    async generateInvitation(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId } = req.params;
+            const { expiresInDays } = req.body;
+
+            const result = await this.groupePartageService.generateInvitation(groupeId, expiresInDays || 7);
+            res.status(200).json(result);
+        } catch (error: any) {
+            console.error('Erreur génération invitation:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Rejoindre via invitation
+     * POST /api/groupes-partage/join
+     */
+    async joinByInvitation(req: Request, res: Response): Promise<void> {
+        try {
+            const { token } = req.body;
+            // Assuming auth middleware populates req.user
+            const userId = (req as any).user?.id;
+
+            if (!token || !userId) {
+                res.status(400).json({ message: 'Token et authentification requis' });
+                return;
+            }
+
+            const groupe = await this.groupePartageService.joinByInvitation(token, userId);
+            res.status(200).json({ message: 'Groupe rejoint avec succès', groupe });
+        } catch (error: any) {
+            console.error('Erreur rejoindre groupe:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Ajouter un document
+     * POST /api/groupes-partage/:groupeId/documents
+     */
+    async addDocument(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId } = req.params;
+            const { documentId, categoryId } = req.body;
+
+            if (!documentId) {
+                res.status(400).json({ message: 'documentId requis' });
+                return;
+            }
+
+            await this.groupePartageService.addDocument(groupeId, documentId, categoryId);
+            res.status(200).json({ message: 'Document ajouté avec succès' });
+        } catch (error: any) {
+            console.error('Erreur ajout document:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Retirer un document
+     * DELETE /api/groupes-partage/:groupeId/documents/:documentId
+     */
+    async removeDocument(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, documentId } = req.params;
+            await this.groupePartageService.removeDocument(groupeId, documentId);
+            res.status(200).json({ message: 'Document retiré avec succès' });
+        } catch (error: any) {
+            console.error('Erreur retrait document:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    // ========== GESTION DES CATÉGORIES ==========
+
+    /**
+     * Récupérer les catégories d'un groupe
+     * GET /api/groupes-partage/:groupeId/categories
+     */
+    async getGroupCategories(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId } = req.params;
+            const categories = await this.groupePartageService.getGroupCategories(groupeId);
+            res.status(200).json({ categories });
+        } catch (error: any) {
+            console.error('Erreur récupération catégories:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Créer une catégorie pour un groupe
+     * POST /api/groupes-partage/:groupeId/categories
+     */
+    async createGroupCategory(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId } = req.params;
+            const { categorieName, description } = req.body;
+            const userId = (req as any).user?.id;
+
+            if (!categorieName) {
+                res.status(400).json({ message: 'categorieName requis' });
+                return;
+            }
+
+            const category = await this.groupePartageService.createGroupCategory(
+                groupeId,
+                categorieName,
+                description,
+                userId
+            );
+            res.status(201).json(category);
+        } catch (error: any) {
+            console.error('Erreur création catégorie:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Mettre à jour une catégorie
+     * PUT /api/groupes-partage/:groupeId/categories/:categoryId
+     */
+    async updateGroupCategory(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, categoryId } = req.params;
+            const { categorieName, description } = req.body;
+
+            if (!categorieName) {
+                res.status(400).json({ message: 'categorieName requis' });
+                return;
+            }
+
+            const category = await this.groupePartageService.updateGroupCategory(
+                groupeId,
+                categoryId,
+                categorieName,
+                description
+            );
+            res.status(200).json(category);
+        } catch (error: any) {
+            console.error('Erreur mise à jour catégorie:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Supprimer une catégorie
+     * DELETE /api/groupes-partage/:groupeId/categories/:categoryId
+     */
+    async deleteGroupCategory(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, categoryId } = req.params;
+            await this.groupePartageService.deleteGroupCategory(groupeId, categoryId);
+            res.status(200).json({ message: 'Catégorie supprimée avec succès' });
+        } catch (error: any) {
+            console.error('Erreur suppression catégorie:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
 }

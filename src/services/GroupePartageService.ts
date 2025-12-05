@@ -5,6 +5,8 @@ import { Class } from "../entity/classe";
 import { User, UserRole } from "../entity/user";
 import { EnseignementAssignment } from "../entity/enseignement.assigment";
 import { GroupePartage, GroupePartageType } from "../entity/groupe.partage";
+import { Document } from "../entity/document";
+import { DocumentCategorie } from "../entity/document.categorie";
 
 
 export class GroupePartageService {
@@ -14,6 +16,8 @@ export class GroupePartageService {
     private classRepository = AppDataSource.getRepository(Class);
     private userRepository = AppDataSource.getRepository(User);
     private enseignementRepository = AppDataSource.getRepository(EnseignementAssignment);
+    private documentRepository = AppDataSource.getRepository(Document);
+    private documentCategorieRepository = AppDataSource.getRepository(DocumentCategorie);
 
 
     /**
@@ -751,5 +755,253 @@ export class GroupePartageService {
             groupe.users = groupe.users.filter(u => !userIdsToRemove.includes(u.id));
             await this.groupePartageRepository.save(groupe);
         }
+    }
+
+    // ========== GESTION DES PUBLISHERS, INVITATIONS ET DOCUMENTS ==========
+
+    /**
+     * Ajouter un éditeur (publisher) au groupe
+     */
+    async addPublisher(groupeId: string, userId: string): Promise<void> {
+        const groupe = await this.groupePartageRepository.findOne({
+            where: { id: groupeId },
+            relations: ['allowedPublishers']
+        });
+
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+
+        if (!groupe || !user) {
+            throw new Error('Groupe ou utilisateur introuvable');
+        }
+
+        if (!groupe.allowedPublishers) {
+            groupe.allowedPublishers = [];
+        }
+
+        if (!groupe.allowedPublishers.some(u => u.id === userId)) {
+            groupe.allowedPublishers.push(user);
+            await this.groupePartageRepository.save(groupe);
+        }
+    }
+
+    /**
+     * Générer un lien d'invitation
+     */
+    async generateInvitation(groupeId: string, expiresInDays: number): Promise<{ token: string; expiresAt: Date }> {
+        const groupe = await this.groupePartageRepository.findOne({ where: { id: groupeId } });
+
+        if (!groupe) {
+            throw new Error('Groupe introuvable');
+        }
+
+        const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+
+        groupe.invitationToken = token;
+        groupe.invitationExpiresAt = expiresAt;
+
+        await this.groupePartageRepository.save(groupe);
+
+        return { token, expiresAt };
+    }
+
+    /**
+     * Rejoindre un groupe via invitation
+     */
+    async joinByInvitation(token: string, userId: string): Promise<GroupePartage> {
+        const groupe = await this.groupePartageRepository.findOne({
+            where: { invitationToken: token },
+            relations: ['users']
+        });
+
+        if (!groupe) {
+            throw new Error('Invitation invalide');
+        }
+
+        if (!groupe.invitationExpiresAt || groupe.invitationExpiresAt < new Date()) {
+            throw new Error('Invitation expirée');
+        }
+
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) {
+            throw new Error('Utilisateur introuvable');
+        }
+
+        if (!groupe.users) {
+            groupe.users = [];
+        }
+
+        if (!groupe.users.some(u => u.id === userId)) {
+            groupe.users.push(user);
+            await this.groupePartageRepository.save(groupe);
+        }
+
+        return groupe;
+    }
+
+    /**
+     * Ajouter un document au groupe
+     */
+    async addDocument(groupeId: string, documentId: string, categoryId?: string): Promise<void> {
+        const groupe = await this.groupePartageRepository.findOne({
+            where: { id: groupeId },
+            relations: ['documents']
+        });
+
+        const document = await this.documentRepository.findOne({ where: { id: documentId } });
+
+        if (!groupe || !document) {
+            throw new Error('Groupe ou document introuvable');
+        }
+
+        if (categoryId) {
+            const category = await this.documentCategorieRepository.findOne({ where: { id: categoryId } });
+            if (category) {
+                document.categorie = category;
+                await this.documentRepository.save(document);
+            }
+        }
+
+        if (!groupe.documents) {
+            groupe.documents = [];
+        }
+
+        if (!groupe.documents.some(d => d.id === document.id)) {
+            groupe.documents.push(document);
+            await this.groupePartageRepository.save(groupe);
+        }
+    }
+
+    /**
+     * Retirer un document du groupe
+     */
+    async removeDocument(groupeId: string, documentId: string): Promise<void> {
+        const groupe = await this.groupePartageRepository.findOne({
+            where: { id: groupeId },
+            relations: ['documents']
+        });
+
+        if (!groupe) {
+            throw new Error('Groupe introuvable');
+        }
+
+        if (groupe.documents) {
+            groupe.documents = groupe.documents.filter(d => d.id !== documentId);
+            await this.groupePartageRepository.save(groupe);
+        }
+    }
+
+    // ========== GESTION DES CATÉGORIES ==========
+
+    /**
+     * Récupérer toutes les catégories d'un groupe
+     */
+    async getGroupCategories(groupeId: string): Promise<DocumentCategorie[]> {
+        // Récupérer les catégories spécifiques au groupe et les catégories globales
+        const categories = await this.documentCategorieRepository.find({
+            where: [
+                { groupePartage: { id: groupeId } },
+                { isGlobal: true }
+            ],
+            order: {
+                categorieName: 'ASC'
+            }
+        });
+
+        return categories;
+    }
+
+    /**
+     * Créer une catégorie pour un groupe
+     */
+    async createGroupCategory(groupeId: string, categorieName: string, description?: string, userId?: string): Promise<DocumentCategorie> {
+        // Vérifier que le groupe existe
+        const groupe = await this.groupePartageRepository.findOne({
+            where: { id: groupeId }
+        });
+
+        if (!groupe) {
+            throw new Error('Groupe introuvable');
+        }
+
+        // Créer la catégorie
+        const category = this.documentCategorieRepository.create({
+            categorieName,
+            description,
+            isGlobal: false,
+            groupePartage: groupe
+        });
+
+        await this.documentCategorieRepository.save(category);
+        return category;
+    }
+
+    /**
+     * Mettre à jour une catégorie
+     */
+    async updateGroupCategory(groupeId: string, categoryId: string, categorieName: string, description?: string): Promise<DocumentCategorie> {
+        // Récupérer la catégorie
+        const category = await this.documentCategorieRepository.findOne({
+            where: { id: categoryId },
+            relations: ['groupePartage']
+        });
+
+        if (!category) {
+            throw new Error('Catégorie introuvable');
+        }
+
+        // Vérifier que la catégorie appartient bien au groupe
+        if (category.groupePartage?.id !== groupeId) {
+            throw new Error('Cette catégorie n\'appartient pas à ce groupe');
+        }
+
+        // Vérifier que ce n'est pas une catégorie globale
+        if (category.isGlobal) {
+            throw new Error('Les catégories globales ne peuvent pas être modifiées au niveau du groupe');
+        }
+
+        // Mettre à jour le nom
+        // Mettre à jour le nom et la description
+        category.categorieName = categorieName;
+        if (description !== undefined) {
+            category.description = description;
+        }
+        await this.documentCategorieRepository.save(category);
+
+        return category;
+    }
+
+    /**
+     * Supprimer une catégorie
+     */
+    async deleteGroupCategory(groupeId: string, categoryId: string): Promise<void> {
+        // Récupérer la catégorie
+        const category = await this.documentCategorieRepository.findOne({
+            where: { id: categoryId },
+            relations: ['groupePartage', 'documents']
+        });
+
+        if (!category) {
+            throw new Error('Catégorie introuvable');
+        }
+
+        // Vérifier que la catégorie appartient bien au groupe
+        if (category.groupePartage?.id !== groupeId) {
+            throw new Error('Cette catégorie n\'appartient pas à ce groupe');
+        }
+
+        // Vérifier que ce n'est pas une catégorie globale
+        if (category.isGlobal) {
+            throw new Error('Les catégories globales ne peuvent pas être supprimées au niveau du groupe');
+        }
+
+        // Vérifier qu'il n'y a pas de documents associés
+        if (category.documents && category.documents.length > 0) {
+            throw new Error('Impossible de supprimer une catégorie contenant des documents');
+        }
+
+        // Supprimer la catégorie
+        await this.documentCategorieRepository.remove(category);
     }
 }

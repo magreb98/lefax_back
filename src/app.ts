@@ -130,6 +130,10 @@ const initializeApp = async () => {
     await AppDataSource.initialize();
     logger.info('✅ Base de données connectée avec succès');
 
+    // 🌱 Seed des utilisateurs par défaut
+    const { seedDefaultUsers } = await import('./scripts/seedDefaultUsers');
+    await seedDefaultUsers();
+
     // Initialisation du groupe public
     const groupeRepo = AppDataSource.getRepository(GroupePartage);
     const userRepo = AppDataSource.getRepository(User);
