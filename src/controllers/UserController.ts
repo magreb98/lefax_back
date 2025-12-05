@@ -549,4 +549,189 @@ export class UserController {
       });
     }
   }
+
+  /**
+   * Exclure un �tudiant d'une �cole (ADMIN only)
+   */
+  async excludeStudentFromSchool(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId, schoolId } = req.body;
+
+      if (!studentId || !schoolId) {
+        res.status(400).json({
+          message: 'Les champs studentId et schoolId sont requis'
+        });
+        return;
+      }
+
+      const student = await this.userService.excludeStudentFromSchool(studentId, schoolId);
+
+      res.status(200).json({
+        message: 'Etudiant exclu de l\'école avec succès',
+        user: {
+          id: student.id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          role: student.role
+        }
+      });
+    } catch (error: any) {
+      console.error('Erreur lors de l\'exclusion de l\'étudiant:', error);
+      res.status(400).json({
+        message: error.message || 'Erreur lors de l\'exclusion de l\'étudiant'
+      });
+    }
+  }
+
+  /**
+   * R�cup�rer tous les enseignants d'une �cole
+   */
+  async getTeachersBySchool(req: Request, res: Response): Promise<void> {
+    try {
+      const { schoolId } = req.params;
+
+      const teachers = await this.userService.getTeachersBySchool(schoolId);
+
+      res.json({
+        count: teachers.length,
+        teachers: teachers.map(t => ({
+          id: t.id,
+          firstName: t.firstName,
+          lastName: t.lastName,
+          email: t.email,
+          phoneNumber: t.phoneNumber,
+          createdAt: t.createdAt
+        }))
+      });
+    } catch (error: any) {
+      console.error('Erreur lors de la récupération des enseignants:', error);
+      res.status(500).json({
+        message: 'Erreur lors de la récupération des enseignants'
+      });
+    }
+  }
+
+  /**
+   * Ajouter un enseignant � une �cole
+   */
+  async addTeacherToSchool(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId, schoolId } = req.body;
+
+      if (!userId || !schoolId) {
+        res.status(400).json({
+          message: 'Les champs userId et schoolId sont requis'
+        });
+        return;
+      }
+
+      const teacher = await this.userService.addTeacherToSchool(userId, schoolId);
+
+      res.status(200).json({
+        message: 'Enseignant ajouté à l\'école avec succès',
+        teacher: {
+          id: teacher.id,
+          firstName: teacher.firstName,
+          lastName: teacher.lastName,
+          role: teacher.role
+        }
+      });
+    } catch (error: any) {
+      console.error('Erreur lors de l\'ajout de l\'enseignant:', error);
+      res.status(400).json({
+        message: error.message || 'Erreur lors de l\'ajout de l\'enseignant'
+      });
+    }
+  }
+
+  /**
+   * Retirer un enseignant d'une �cole
+   */
+  async removeTeacherFromSchool(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId, schoolId } = req.body;
+
+      if (!userId || !schoolId) {
+        res.status(400).json({
+          message: 'Les champs userId et schoolId sont requis'
+        });
+        return;
+      }
+
+      const teacher = await this.userService.removeTeacherFromSchool(userId, schoolId);
+
+      res.status(200).json({
+        message: 'Enseignant retiré de l\'école avec succès',
+        teacher: {
+          id: teacher.id,
+          firstName: teacher.firstName,
+          lastName: teacher.lastName,
+          role: teacher.role
+        }
+      });
+    } catch (error: any) {
+      console.error('Erreur lors du retrait de l\'enseignant:', error);
+      res.status(400).json({
+        message: error.message || 'Erreur lors du retrait de l\'enseignant'
+      });
+    }
+  }
+
+  /**
+   * Accorder la permission de voir tous les groupes (ADMIN only)
+   */
+  async grantViewAllGroupsPermission(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId } = req.body;
+
+      if (!userId) {
+        res.status(400).json({ message: 'userId est requis' });
+        return;
+      }
+
+      const user = await this.userService.grantViewAllGroupsPermission(userId);
+
+      res.status(200).json({
+        message: 'Permission accord�e avec succ�s',
+        user: {
+          id: user.id,
+          canViewAllGroups: user.canViewAllGroups
+        }
+      });
+    } catch (error: any) {
+      console.error('Erreur lors de l\'octroi de la permission:', error);
+      res.status(400).json({
+        message: error.message || 'Erreur lors de l\'octroi de la permission'
+      });
+    }
+  }
+
+  /**
+   * Révoquer la permission de voir tous les groupes (ADMIN only)
+   */
+  async revokeViewAllGroupsPermission(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId } = req.body;
+
+      if (!userId) {
+        res.status(400).json({ message: 'userId est requis' });
+        return;
+      }
+
+      const user = await this.userService.revokeViewAllGroupsPermission(userId);
+
+      res.status(200).json({
+        message: 'Permission révoquée avec succès',
+        user: {
+          id: user.id,
+          canViewAllGroups: user.canViewAllGroups
+        }
+      });
+    } catch (error: any) {
+      console.error('Erreur lors de la révocation de la permission:', error);
+      res.status(400).json({
+        message: error.message || 'Erreur lors de la révocation de la permission'
+      });
+    }
+  }
 }

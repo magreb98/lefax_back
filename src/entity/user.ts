@@ -57,6 +57,9 @@ export class User {
     @Column({ default: false })
     canCreateSchool!: boolean;
 
+    @Column({ default: false })
+    canViewAllGroups!: boolean;
+
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     createdAt!: Date;
 

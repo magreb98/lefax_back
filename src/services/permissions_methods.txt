@@ -1,0 +1,21 @@
+/**
+ * Accorder la permission de voir tous les groupes
+ */
+async grantViewAllGroupsPermission(userId: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new Error('Utilisateur non trouvé');
+    
+    user.canViewAllGroups = true;
+    return await this.userRepository.save(user);
+}
+
+/**
+ * Révoquer la permission de voir tous les groupes
+ */
+async revokeViewAllGroupsPermission(userId: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new Error('Utilisateur non trouvé');
+    
+    user.canViewAllGroups = false;
+    return await this.userRepository.save(user);
+}

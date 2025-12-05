@@ -487,4 +487,147 @@ async changeUserSchool(userId: string, schoolId: string): Promise<User> {
     user.school = school;
     return await this.userRepository.save(user);
 }
+
+    /**
+     * Exclure un �tudiant d'une �cole
+     */
+    async excludeStudentFromSchool(studentId: string, schoolId: string): Promise<User> {
+        const student = await this.userRepository.findOne({
+            where: { id: studentId },
+            relations: ['school', 'classe', 'groupesPartage']
+        });
+        
+        if (!student) throw new Error('�tudiant non trouv�');
+        if (!student.school || student.school.id !== schoolId) {
+            throw new Error('Cet étudiant n\'appartient pas à cette école');
+        }
+        if (student.role !== UserRole.ETUDIANT) {
+            throw new Error('Seuls les étudiants peuvent être exclus d\'une école');
+        }
+
+        // R�cup�rer tous les groupes li�s � l'�cole
+        const schoolGroups = await this.groupePartageRepository
+            .createQueryBuilder('groupe')
+            .leftJoinAndSelect('groupe.ecole', 'ecole')
+            .leftJoinAndSelect('groupe.filiere', 'filiere')
+            .leftJoinAndSelect('filiere.school', 'filiereSchool')
+            .leftJoinAndSelect('groupe.classe', 'classe')
+            .leftJoinAndSelect('classe.filiere', 'classeFiliere')
+            .leftJoinAndSelect('classeFiliere.school', 'classeFiliereSchool')
+            .where('ecole.id = :schoolId', { schoolId })
+            .orWhere('filiereSchool.id = :schoolId', { schoolId })
+            .orWhere('classeFiliereSchool.id = :schoolId', { schoolId })
+            .getMany();
+
+        // Retirer l'�tudiant de tous les groupes de l'�cole
+        if (student.groupesPartage && student.groupesPartage.length > 0) {
+            const schoolGroupIds = schoolGroups.map(g => g.id);
+            student.groupesPartage = student.groupesPartage.filter(
+                g => !schoolGroupIds.includes(g.id)
+            );
+        }
+
+        // Retirer l'�tudiant de sa classe
+        const classeId = student.classe?.id;
+        student.classe = undefined;
+
+        // Retirer l'�tudiant de l'�cole
+        student.school = undefined;
+
+        // Changer le r�le en USER
+        student.role = UserRole.USER;
+
+        await this.userRepository.save(student);
+
+        // Synchroniser le groupe de la classe si n�cessaire
+        if (classeId) {
+            await this.groupePartageService.syncClasseGroupePartage(classeId);
+        }
+
+        return student;
+    }
+
+    /**
+     * R�cup�rer tous les enseignants d'une �cole
+     */
+    async getTeachersBySchool(schoolId: string): Promise<User[]> {
+        return await this.userRepository.find({
+            where: {
+                school: { id: schoolId },
+                role: UserRole.ENSEIGNANT
+            },
+            relations: ['school', 'classe', 'enseignements']
+        });
+    }
+
+    /**
+     * Ajouter un enseignant � une �cole
+     */
+    async addTeacherToSchool(userId: string, schoolId: string): Promise<User> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['school']
+        });
+        
+        if (!user) throw new Error('Utilisateur non trouv�');
+        
+        const school = await this.ecoleRepository.findOne({
+            where: { id: schoolId }
+        });
+        
+        if (!school) throw new Error('�cole non trouv�e');
+        
+        // Promouvoir en enseignant si ce n'est pas d�j� le cas
+        if (user.role === UserRole.USER) {
+            user.role = UserRole.ENSEIGNANT;
+        }
+        
+        user.school = school;
+        return await this.userRepository.save(user);
+    }
+
+    /**
+     * Retirer un enseignant d'une �cole
+     */
+    async removeTeacherFromSchool(userId: string, schoolId: string): Promise<User> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['school']
+        });
+        
+        if (!user) throw new Error('Utilisateur non trouv�');
+        if (!user.school || user.school.id !== schoolId) {
+                    throw new Error('Cet enseignant n\'appartient pas à cette école');
+        }
+        if (user.role !== UserRole.ENSEIGNANT) {
+            throw new Error('Cet utilisateur n\'est pas un enseignant');
+        }
+        
+        user.school = undefined;
+        user.role = UserRole.USER;
+        
+        return await this.userRepository.save(user);
+    }
+
+    /**
+     * Accorder la permission de voir tous les groupes
+     */
+    async grantViewAllGroupsPermission(userId: string): Promise<User> {
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) throw new Error('Utilisateur non trouv�');
+        
+        user.canViewAllGroups = true;
+        return await this.userRepository.save(user);
+    }
+
+    /**
+     * R�voquer la permission de voir tous les groupes
+     */
+    async revokeViewAllGroupsPermission(userId: string): Promise<User> {
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) throw new Error('Utilisateur non trouv�');
+        
+        user.canViewAllGroups = false;
+        return await this.userRepository.save(user);
+    }
 }
