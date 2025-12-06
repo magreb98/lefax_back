@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { FiliereController } from '../controllers/FiliereController';
 import { validateDto } from '../middleware/validateDto';
 import { CreateFiliereDto } from '../dtos/filiere.dto';
+import { authMiddleware, requireAdmin } from '../middleware/auth';
 
 const router = Router();
 const filiereController = new FiliereController();
@@ -31,7 +32,7 @@ const filiereController = new FiliereController();
  * POST /api/filieres
  * Créer une nouvelle filière
  */
-router.post('/', validateDto(CreateFiliereDto), (req, res) => filiereController.createFiliere(req, res));
+router.post('/', authMiddleware, requireAdmin, validateDto(CreateFiliereDto), (req, res) => filiereController.createFiliere(req, res));
 
 /**
  * GET /api/filieres
@@ -40,7 +41,7 @@ router.post('/', validateDto(CreateFiliereDto), (req, res) => filiereController.
  * - ecoleId: string (optionnel) - Filtrer par école
  * - name: string (optionnel) - Filtrer par nom
  */
-router.get('/', (req, res) => filiereController.getFilieres(req, res));
+router.get('/', authMiddleware, (req, res) => filiereController.getFilieres(req, res));
 
 /**
  * GET /api/filieres/:id
@@ -48,7 +49,7 @@ router.get('/', (req, res) => filiereController.getFilieres(req, res));
  * Params:
  * - id: string (requis) - ID de la filière
  */
-router.get('/:id', (req, res) => filiereController.getFiliereById(req, res));
+router.get('/:id', authMiddleware, (req, res) => filiereController.getFiliereById(req, res));
 
 /**
  * PUT /api/filieres/:id
@@ -59,7 +60,7 @@ router.get('/:id', (req, res) => filiereController.getFiliereById(req, res));
  * - name: string (optionnel) - Nouveau nom
  * - description: string (optionnel) - Nouvelle description
  */
-router.put('/:id', (req, res) => filiereController.updateFiliere(req, res));
+router.put('/:id', authMiddleware, requireAdmin, (req, res) => filiereController.updateFiliere(req, res));
 
 /**
  * DELETE /api/filieres/:id
@@ -67,7 +68,7 @@ router.put('/:id', (req, res) => filiereController.updateFiliere(req, res));
  * Params:
  * - id: string (requis) - ID de la filière
  */
-router.delete('/:id', (req, res) => filiereController.deleteFiliere(req, res));
+router.delete('/:id', authMiddleware, requireAdmin, (req, res) => filiereController.deleteFiliere(req, res));
 
 /**
  * POST /api/filieres/:id/sync-groupe
@@ -75,14 +76,7 @@ router.delete('/:id', (req, res) => filiereController.deleteFiliere(req, res));
  * Params:
  * - id: string (requis) - ID de la filière
  */
-router.post('/:id/sync-groupe', (req, res) => filiereController.syncFiliereGroupe(req, res));
-/**
- * POST /api/filieres/:id/sync-groupe
- * Synchroniser le groupe de partage associé à la filière
- * Params:
- * - id: string (requis) - ID de la filière
- */
-router.post('/:id/sync-groupe', (req, res) => filiereController.syncFiliereGroupe(req, res));
+router.post('/:id/sync-groupe', authMiddleware, requireAdmin, (req, res) => filiereController.syncFiliereGroupe(req, res));
 
 /**
  * POST /api/filieres/groupes/:groupeId/filieres/:filiereId
@@ -91,7 +85,7 @@ router.post('/:id/sync-groupe', (req, res) => filiereController.syncFiliereGroup
  * - groupeId: string (requis)
  * - filiereId: string (requis)
  */
-router.post('/groupes/:groupeId/filieres/:filiereId', (req, res) => filiereController.addFiliereToGroupe(req, res));
+router.post('/groupes/:groupeId/filieres/:filiereId', authMiddleware, requireAdmin, (req, res) => filiereController.addFiliereToGroupe(req, res));
 
 /**
  * DELETE /api/filieres/groupes/:groupeId/filieres/:filiereId
@@ -100,7 +94,7 @@ router.post('/groupes/:groupeId/filieres/:filiereId', (req, res) => filiereContr
  * - groupeId: string (requis)
  * - filiereId: string (requis)
  */
-router.delete('/groupes/:groupeId/filieres/:filiereId', (req, res) => filiereController.removeFiliereFromGroupe(req, res));
+router.delete('/groupes/:groupeId/filieres/:filiereId', authMiddleware, requireAdmin, (req, res) => filiereController.removeFiliereFromGroupe(req, res));
 
 /**
  * POST /api/filieres/groupes/sync/filiere/:filiereId
@@ -108,6 +102,6 @@ router.delete('/groupes/:groupeId/filieres/:filiereId', (req, res) => filiereCon
  * Params:
  * - filiereId: string (requis)
  */
-router.post('/groupes/sync/filiere/:filiereId', (req, res) => filiereController.syncFiliereGroupePartage(req, res));
+router.post('/groupes/sync/filiere/:filiereId', authMiddleware, requireAdmin, (req, res) => filiereController.syncFiliereGroupePartage(req, res));
 
 export default router;

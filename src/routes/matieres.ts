@@ -2,6 +2,7 @@ import { Router } from "express";
 import { MatiereController } from "../controllers/MatiereController";
 import { validateDto } from "../middleware/validateDto";
 import { CreateMatiereDto, UpdateMatiereDto } from "../dtos/matiere.dto";
+import { authMiddleware, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 const matiereController = new MatiereController();
@@ -24,7 +25,7 @@ const matiereController = new MatiereController();
  *       200:
  *         description: Liste des matières récupérée avec succès
  */
-router.get("/", (req, res) => matiereController.getMatieres(req, res));
+router.get("/", authMiddleware, (req, res) => matiereController.getMatieres(req, res));
 
 /**
  * @swagger
@@ -46,7 +47,7 @@ router.get("/", (req, res) => matiereController.getMatieres(req, res));
  *       404:
  *         description: Matière non trouvée
  */
-router.get("/:id", (req, res) => matiereController.getMatiereById(req, res));
+router.get("/:id", authMiddleware, (req, res) => matiereController.getMatiereById(req, res));
 
 /**
  * @swagger
@@ -68,7 +69,7 @@ router.get("/:id", (req, res) => matiereController.getMatiereById(req, res));
  *       404:
  *         description: Matière non trouvée
  */
-router.get("/:id/documents", (req, res) => matiereController.getDocumentsByMatiere(req, res));
+router.get("/:id/documents", authMiddleware, (req, res) => matiereController.getDocumentsByMatiere(req, res));
 
 /**
  * @swagger
@@ -91,7 +92,7 @@ router.get("/:id/documents", (req, res) => matiereController.getDocumentsByMatie
  *       404:
  *         description: Classe non trouvée
  */
-router.post("/", validateDto(CreateMatiereDto), (req, res) => matiereController.createMatiere(req, res));
+router.post("/", authMiddleware, requireAdmin, validateDto(CreateMatiereDto), (req, res) => matiereController.createMatiere(req, res));
 
 /**
  * @swagger
@@ -119,7 +120,7 @@ router.post("/", validateDto(CreateMatiereDto), (req, res) => matiereController.
  *       404:
  *         description: Matière non trouvée
  */
-router.put("/:id", validateDto(UpdateMatiereDto), (req, res) => matiereController.updateMatiere(req, res));
+router.put("/:id", authMiddleware, requireAdmin, validateDto(UpdateMatiereDto), (req, res) => matiereController.updateMatiere(req, res));
 
 /**
  * @swagger
@@ -141,6 +142,6 @@ router.put("/:id", validateDto(UpdateMatiereDto), (req, res) => matiereControlle
  *       404:
  *         description: Matière non trouvée
  */
-router.delete("/:id", (req, res) => matiereController.deleteMatiere(req, res));
+router.delete("/:id", authMiddleware, requireAdmin, (req, res) => matiereController.deleteMatiere(req, res));
 
 export default router;

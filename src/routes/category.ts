@@ -1,7 +1,8 @@
 import { Router } from "express";
-import { CategoryController } from "../controllers/CategoryController"; 
+import { CategoryController } from "../controllers/CategoryController";
 import { validateDto } from '../middleware/validateDto';
 import { CreateCategoryDto } from '../dtos/category.dto';
+import { authMiddleware, requireAdmin } from '../middleware/auth';
 
 const router = Router();
 const categoryController = new CategoryController();
@@ -29,13 +30,13 @@ const categoryController = new CategoryController();
  * GET /api/category
  * Récupérer toutes les catégories de documents
  */
-router.get("/", categoryController.getCategories.bind(categoryController));
+router.get("/", authMiddleware, categoryController.getCategories.bind(categoryController));
 
 /**
  * POST /api/category
  * Créer une nouvelle catégorie
  */
-router.post("/", validateDto(CreateCategoryDto), categoryController.createCategory.bind(categoryController));
+router.post("/", authMiddleware, requireAdmin, validateDto(CreateCategoryDto), categoryController.createCategory.bind(categoryController));
 
 /**
  * DELETE /api/category/:id
@@ -43,7 +44,7 @@ router.post("/", validateDto(CreateCategoryDto), categoryController.createCatego
  * Params:
  * - id: string (requis) - ID de la catégorie
  */
-router.delete("/:id", categoryController.deleteCategory.bind(categoryController));
+router.delete("/:id", authMiddleware, requireAdmin, categoryController.deleteCategory.bind(categoryController));
 
 /**
  * PUT /api/category/:id
@@ -54,7 +55,7 @@ router.delete("/:id", categoryController.deleteCategory.bind(categoryController)
  * - name: string (optionnel) - Nouveau nom de la catégorie
  * - description: string (optionnel) - Nouvelle description
  */
-router.put("/:id", categoryController.updateCategory.bind(categoryController));
+router.put("/:id", authMiddleware, requireAdmin, categoryController.updateCategory.bind(categoryController));
 
 /**
  * GET /api/category/:id
@@ -62,6 +63,6 @@ router.put("/:id", categoryController.updateCategory.bind(categoryController));
  * Params:
  * - id: string (requis) - ID de la catégorie
  */
-router.get("/:id", categoryController.getCategoryById.bind(categoryController));
+router.get("/:id", authMiddleware, categoryController.getCategoryById.bind(categoryController));
 
 export default router;

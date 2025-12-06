@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { DocumentService } from '../services/DocumentService';
+import { canUserPublishToGroups } from '../middleware/groupAuth';
 
 export class DocumentController {
     private documentService = new DocumentService();
@@ -18,105 +19,95 @@ export class DocumentController {
     /**
      * Uploader un document
      * L'utilisateur authentifié est automatiquement défini comme addedBy
+     * Vérifie les permissions de publication pour chaque groupe ciblé
      */
     async uploadDocument(req: any, res: any): Promise<void> {
         try {
             // Vérifier que l'utilisateur est authentifié
             if (!req.user || !req.userId) {
-                return res.status(401).json({ 
+                // Supprimer le fichier si déjà uploadé
+                if (req.file && req.file.path) {
+                    fs.unlinkSync(req.file.path);
+                }
+                return res.status(401).json({
                     message: 'Utilisateur non authentifié',
                     error: 'NOT_AUTHENTICATED'
                 });
             }
 
-            // Configurer le stockage avec multer
-            const storage = multer.diskStorage({
-                destination: (req, file, cb) => {
-                    cb(null, this.uploadDir);
-                },
-                filename: (req, file, cb) => {
-                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-                    cb(null, uniqueSuffix + path.extname(file.originalname));
+            // Extraire les informations du corps de la requête
+            const { documentName, description, categorieId, matiereId, groupePartageIds, isdownloadable } = req.body;
+            const filePath = req.file ? req.file.path : null;
+
+            if (!filePath) {
+                return res.status(400).json({ message: 'Aucun fichier téléchargé' });
+            }
+
+            // Validation des champs requis
+            if (!documentName) {
+                fs.unlinkSync(filePath);
+                return res.status(400).json({
+                    message: 'Le champ documentName est requis'
+                });
+            }
+
+            // Parser les IDs des groupes de partage si fournis
+            let parsedGroupePartageIds: string[] | undefined;
+            if (groupePartageIds) {
+                parsedGroupePartageIds = typeof groupePartageIds === 'string'
+                    ? JSON.parse(groupePartageIds)
+                    : groupePartageIds;
+            }
+
+            // ✅ Vérifier les permissions de publication pour chaque groupe ciblé
+            if (parsedGroupePartageIds && parsedGroupePartageIds.length > 0) {
+                const publishCheck = await canUserPublishToGroups(req.user, parsedGroupePartageIds);
+
+                if (!publishCheck.canPublish) {
+                    // Supprimer le fichier uploadé
+                    fs.unlinkSync(filePath);
+                    return res.status(403).json({
+                        message: publishCheck.reason || 'Vous n\'êtes pas autorisé à publier dans ces groupes',
+                        error: 'NOT_AUTHORIZED_TO_PUBLISH',
+                        deniedGroups: publishCheck.deniedGroups
+                    });
                 }
+            }
+
+            // Créer le document via le service
+            // addedById est automatiquement l'utilisateur connecté
+            const newDocument = await this.documentService.createDocument({
+                documentName,
+                description,
+                documentUrl: filePath,
+                fileSize: req.file.size,
+                fileType: req.file.mimetype,
+                categorieId,
+                addedById: req.userId,
+                matiereId,
+                groupePartageIds: parsedGroupePartageIds,
+                isdownloadable: isdownloadable === 'true' || isdownloadable === true
             });
 
-            const upload = multer({
-                storage: storage,
-                limits: { fileSize: 10 * 1024 * 1024 } // 10MB max
-            }).single('file');
-
-            // Gérer l'upload du fichier
-            upload(req, res, async (err: any) => {
-                if (err) {
-                    return res.status(400).json({
-                        message: 'Erreur lors de l\'upload du fichier',
-                        error: err.message
-                    });
-                }
-
-                try {
-                    // Extraire les informations du corps de la requête
-                    const { documentName, description, categorieId, matiereId, groupePartageIds, isdownloadable } = req.body;
-                    const filePath = req.file ? req.file.path : null;
-
-                    if (!filePath) {
-                        return res.status(400).json({ message: 'Aucun fichier téléchargé' });
-                    }
-
-                    // Validation des champs requis
-                    if (!documentName || !categorieId) {
-                        fs.unlinkSync(filePath);
-                        return res.status(400).json({
-                            message: 'Les champs documentName et categorieId sont requis'
-                        });
-                    }
-
-                    // Parser les IDs des groupes de partage si fournis
-                    let parsedGroupePartageIds: string[] | undefined;
-                    if (groupePartageIds) {
-                        parsedGroupePartageIds = typeof groupePartageIds === 'string'
-                            ? JSON.parse(groupePartageIds)
-                            : groupePartageIds;
-                    }
-
-                    // Créer le document via le service
-                    // addedById est automatiquement l'utilisateur connecté
-                    const newDocument = await this.documentService.createDocument({
-                        documentName,
-                        description,
-                        documentUrl: filePath,
-                        fileSize: req.file.size,
-                        fileType: req.file.mimetype,
-                        categorieId,
-                        addedById: req.userId,
-                        matiereId,
-                        groupePartageIds: parsedGroupePartageIds,
-                        isdownloadable: isdownloadable === 'true' || isdownloadable === true
-                    });
-
-                    res.status(201).json({
-                        message: 'Document créé avec succès',
-                        document: newDocument,
-                        addedBy: {
-                            id: req.user.id,
-                            firstName: req.user.firstName,
-                            lastName: req.user.lastName
-                        }
-                    });
-                } catch (innerError: any) {
-                    // En cas d'erreur, supprimer le fichier uploadé
-                    if (req.file && req.file.path) {
-                        fs.unlinkSync(req.file.path);
-                    }
-                    res.status(400).json({
-                        message: 'Erreur lors de la création du document',
-                        error: innerError.message
-                    });
+            res.status(201).json({
+                message: 'Document créé avec succès',
+                document: newDocument,
+                addedBy: {
+                    id: req.user.id,
+                    firstName: req.user.firstName,
+                    lastName: req.user.lastName
                 }
             });
         } catch (error: any) {
+            // En cas d'erreur, supprimer le fichier uploadé
+            if (req.file && req.file.path) {
+                fs.unlinkSync(req.file.path);
+            }
             console.error('Erreur lors de l\'upload du document :', error);
-            res.status(500).json({ message: 'Erreur serveur lors de l\'upload du document' });
+            res.status(400).json({
+                message: 'Erreur lors de la création du document',
+                error: error.message
+            });
         }
     }
 
@@ -128,116 +119,109 @@ export class DocumentController {
         try {
             // Vérifier que l'utilisateur est authentifié
             if (!req.user || !req.userId) {
-                return res.status(401).json({ 
+                // Supprimer les fichiers si déjà uploadés
+                if (req.files && Array.isArray(req.files)) {
+                    req.files.forEach((file: Express.Multer.File) => {
+                        if (fs.existsSync(file.path)) {
+                            fs.unlinkSync(file.path);
+                        }
+                    });
+                }
+                return res.status(401).json({
                     message: 'Utilisateur non authentifié',
                     error: 'NOT_AUTHENTICATED'
                 });
             }
 
-            const storage = multer.diskStorage({
-                destination: (req, file, cb) => {
-                    cb(null, this.uploadDir);
-                },
-                filename: (req, file, cb) => {
-                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-                    cb(null, uniqueSuffix + path.extname(file.originalname));
-                }
-            });
+            const { categorieId, matiereId, groupePartageIds, isdownloadable } = req.body;
+            const files = req.files as Express.Multer.File[];
 
-            const upload = multer({
-                storage: storage,
-                limits: { fileSize: 10 * 1024 * 1024 } // 10MB max
-            }).array('files', 20); // Maximum 20 fichiers
+            if (!files || files.length === 0) {
+                return res.status(400).json({ message: 'Aucun fichier téléchargé' });
+            }
 
-            upload(req, res, async (err: any) => {
-                if (err) {
-                    return res.status(400).json({
-                        message: 'Erreur lors de l\'upload des fichiers',
-                        error: err.message
+            if (!categorieId) {
+                // Supprimer tous les fichiers uploadés
+                files.forEach(file => fs.unlinkSync(file.path));
+                return res.status(400).json({
+                    message: 'Le champ categorieId est requis'
+                });
+            }
+
+            // Parser les IDs des groupes de partage
+            let parsedGroupePartageIds: string[] | undefined;
+            if (groupePartageIds) {
+                parsedGroupePartageIds = typeof groupePartageIds === 'string'
+                    ? JSON.parse(groupePartageIds)
+                    : groupePartageIds;
+            }
+
+            // ✅ Vérifier les permissions de publication pour chaque groupe ciblé
+            if (parsedGroupePartageIds && parsedGroupePartageIds.length > 0) {
+                const publishCheck = await canUserPublishToGroups(req.user, parsedGroupePartageIds);
+
+                if (!publishCheck.canPublish) {
+                    // Supprimer tous les fichiers uploadés
+                    files.forEach(file => fs.unlinkSync(file.path));
+                    return res.status(403).json({
+                        message: publishCheck.reason || 'Vous n\'êtes pas autorisé à publier dans ces groupes',
+                        error: 'NOT_AUTHORIZED_TO_PUBLISH',
+                        deniedGroups: publishCheck.deniedGroups
                     });
                 }
+            }
 
+            const createdDocuments = [];
+            const errors = [];
+            for (const file of files) {
                 try {
-                    const { categorieId, matiereId, groupePartageIds, isdownloadable } = req.body;
-                    const files = req.files as Express.Multer.File[];
-
-                    if (!files || files.length === 0) {
-                        return res.status(400).json({ message: 'Aucun fichier téléchargé' });
-                    }
-
-                    if (!categorieId) {
-                        // Supprimer tous les fichiers uploadés
-                        files.forEach(file => fs.unlinkSync(file.path));
-                        return res.status(400).json({
-                            message: 'Le champ categorieId est requis'
-                        });
-                    }
-
-                    // Parser les IDs des groupes de partage
-                    let parsedGroupePartageIds: string[] | undefined;
-                    if (groupePartageIds) {
-                        parsedGroupePartageIds = typeof groupePartageIds === 'string'
-                            ? JSON.parse(groupePartageIds)
-                            : groupePartageIds;
-                    }
-
-                    const createdDocuments = [];
-                    const errors = [];
-
-                    // Créer un document pour chaque fichier
-                    for (const file of files) {
-                        try {
-                            const document = await this.documentService.createDocument({
-                                documentName: file.originalname,
-                                documentUrl: file.path,
-                                fileSize: file.size,
-                                fileType: file.mimetype,
-                                categorieId,
-                                addedById: req.userId, // ✨ Utilisateur authentifié
-                                matiereId,
-                                groupePartageIds: parsedGroupePartageIds,
-                                isdownloadable: isdownloadable === 'true' || isdownloadable === true
-                            });
-
-                            createdDocuments.push(document);
-                        } catch (error: any) {
-                            // En cas d'erreur, supprimer le fichier
-                            fs.unlinkSync(file.path);
-                            errors.push({
-                                fileName: file.originalname,
-                                error: error.message
-                            });
-                        }
-                    }
-
-                    res.status(201).json({
-                        message: `${createdDocuments.length} document(s) créé(s) avec succès`,
-                        documents: createdDocuments,
-                        errors: errors.length > 0 ? errors : undefined,
-                        addedBy: {
-                            id: req.user.id,
-                            firstName: req.user.firstName,
-                            lastName: req.user.lastName
-                        }
+                    const document = await this.documentService.createDocument({
+                        documentName: file.originalname,
+                        documentUrl: file.path,
+                        fileSize: file.size,
+                        fileType: file.mimetype,
+                        categorieId,
+                        addedById: req.userId, // ✨ Utilisateur authentifié
+                        matiereId,
+                        groupePartageIds: parsedGroupePartageIds,
+                        isdownloadable: isdownloadable === 'true' || isdownloadable === true
                     });
-                } catch (innerError: any) {
-                    // En cas d'erreur globale, supprimer tous les fichiers uploadés
-                    if (req.files) {
-                        (req.files as Express.Multer.File[]).forEach(file => {
-                            if (fs.existsSync(file.path)) {
-                                fs.unlinkSync(file.path);
-                            }
-                        });
-                    }
-                    res.status(400).json({
-                        message: 'Erreur lors de la création des documents',
-                        error: innerError.message
+
+                    createdDocuments.push(document);
+                } catch (error: any) {
+                    // En cas d'erreur, supprimer le fichier
+                    fs.unlinkSync(file.path);
+                    errors.push({
+                        fileName: file.originalname,
+                        error: error.message
                     });
+                }
+            }
+
+            res.status(201).json({
+                message: `${createdDocuments.length} document(s) créé(s) avec succès`,
+                documents: createdDocuments,
+                errors: errors.length > 0 ? errors : undefined,
+                addedBy: {
+                    id: req.user.id,
+                    firstName: req.user.firstName,
+                    lastName: req.user.lastName
                 }
             });
         } catch (error: any) {
+            // En cas d'erreur globale, supprimer tous les fichiers uploadés
+            if (req.files) {
+                (req.files as Express.Multer.File[]).forEach(file => {
+                    if (fs.existsSync(file.path)) {
+                        fs.unlinkSync(file.path);
+                    }
+                });
+            }
             console.error('Erreur lors de l\'upload des documents :', error);
-            res.status(500).json({ message: 'Erreur serveur lors de l\'upload des documents' });
+            res.status(400).json({
+                message: 'Erreur lors de la création des documents',
+                error: error.message
+            });
         }
     }
 

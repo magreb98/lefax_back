@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { EcoleController } from '../controllers/EcoleController';
 import { validateDto } from '../middleware/validateDto';
 import { CreateEcoleDto } from '../dtos/ecole.dto';
+import { authMiddleware, requireAdmin } from '../middleware/auth';
+import { requireSuperAdmin } from '../middleware/schoolAuth';
 
 const router = Router();
 const ecoleController = new EcoleController();
@@ -30,7 +32,7 @@ const ecoleController = new EcoleController();
  * POST /api/ecoles
  * Créer une nouvelle école
  */
-router.post('/', validateDto(CreateEcoleDto), (req, res) => ecoleController.createEcole(req, res));
+router.post('/', authMiddleware, validateDto(CreateEcoleDto), (req, res) => ecoleController.createEcole(req, res));
 
 /**
  * GET /api/ecoles
@@ -39,7 +41,7 @@ router.post('/', validateDto(CreateEcoleDto), (req, res) => ecoleController.crea
  * - name: string (optionnel) - Filtrer par nom
  * - address: string (optionnel) - Filtrer par adresse
  */
-router.get('/', (req, res) => ecoleController.getEcoles(req, res));
+router.get('/', authMiddleware, (req, res) => ecoleController.getEcoles(req, res));
 
 /**
  * GET /api/ecoles/:id
@@ -47,7 +49,7 @@ router.get('/', (req, res) => ecoleController.getEcoles(req, res));
  * Params:
  * - id: string (requis) - ID de l'école
  */
-router.get('/:id', (req, res) => ecoleController.getEcoleById(req, res));
+router.get('/:id', authMiddleware, (req, res) => ecoleController.getEcoleById(req, res));
 
 /**
  * PUT /api/ecoles/:id
@@ -60,7 +62,7 @@ router.get('/:id', (req, res) => ecoleController.getEcoleById(req, res));
  * - email: string (optionnel) - Nouvel email
  * - phoneNumber: string (optionnel) - Nouveau numéro de téléphone
  */
-router.put('/:id', (req, res) => ecoleController.updateEcole(req, res));
+router.put('/:id', authMiddleware, requireAdmin, (req, res) => ecoleController.updateEcole(req, res));
 
 /**
  * DELETE /api/ecoles/:id
@@ -68,7 +70,7 @@ router.put('/:id', (req, res) => ecoleController.updateEcole(req, res));
  * Params:
  * - id: string (requis) - ID de l'école
  */
-router.delete('/:id', (req, res) => ecoleController.deleteEcole(req, res));
+router.delete('/:id', authMiddleware, requireSuperAdmin, (req, res) => ecoleController.deleteEcole(req, res));
 
 /**
  * POST /api/ecoles/:id/sync-groupe
@@ -76,14 +78,7 @@ router.delete('/:id', (req, res) => ecoleController.deleteEcole(req, res));
  * Params:
  * - id: string (requis) - ID de l'école
  */
-router.post('/:id/sync-groupe', (req, res) => ecoleController.syncEcoleGroupe(req, res));
-/**
- * POST /api/ecoles/:id/sync-groupe
- * Synchroniser le groupe de partage associé à l'école
- * Params:
- * - id: string (requis) - ID de l'école
- */
-router.post('/:id/sync-groupe', (req, res) => ecoleController.syncEcoleGroupe(req, res));
+router.post('/:id/sync-groupe', authMiddleware, requireAdmin, (req, res) => ecoleController.syncEcoleGroupe(req, res));
 
 /**
  * POST /api/ecoles/groupes/:groupeId/ecoles/:ecoleId
@@ -92,7 +87,7 @@ router.post('/:id/sync-groupe', (req, res) => ecoleController.syncEcoleGroupe(re
  * - groupeId: string (requis)
  * - ecoleId: string (requis)
  */
-router.post('/groupes/:groupeId/ecoles/:ecoleId', (req, res) => ecoleController.addEcoleToGroupe(req, res));
+router.post('/groupes/:groupeId/ecoles/:ecoleId', authMiddleware, requireAdmin, (req, res) => ecoleController.addEcoleToGroupe(req, res));
 
 /**
  * DELETE /api/ecoles/groupes/:groupeId/ecoles/:ecoleId
@@ -101,7 +96,7 @@ router.post('/groupes/:groupeId/ecoles/:ecoleId', (req, res) => ecoleController.
  * - groupeId: string (requis)
  * - ecoleId: string (requis)
  */
-router.delete('/groupes/:groupeId/ecoles/:ecoleId', (req, res) => ecoleController.removeEcoleFromGroupe(req, res));
+router.delete('/groupes/:groupeId/ecoles/:ecoleId', authMiddleware, requireAdmin, (req, res) => ecoleController.removeEcoleFromGroupe(req, res));
 
 /**
  * POST /api/ecoles/groupes/sync/ecole/:ecoleId
@@ -109,6 +104,6 @@ router.delete('/groupes/:groupeId/ecoles/:ecoleId', (req, res) => ecoleControlle
  * Params:
  * - ecoleId: string (requis)
  */
-router.post('/groupes/sync/ecole/:ecoleId', (req, res) => ecoleController.syncEcoleGroupePartage(req, res));
+router.post('/groupes/sync/ecole/:ecoleId', authMiddleware, requireAdmin, (req, res) => ecoleController.syncEcoleGroupePartage(req, res));
 
 export default router;

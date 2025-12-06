@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { DocumentController } from '../controllers/DocumentController';
+import { authMiddleware, requireRole } from '../middleware/auth';
+import { upload } from '../middleware/upload';
 
 const router = Router();
 const documentController = new DocumentController();
 
-// ========== ROUTES UPLOAD ==========
+// ========== ROUTES UPLOAD (AVEC MIDDLEWARE EXPLICITE) ==========
+// L'authentification est vérifiée AVANT le parsing du fichier par multer
 
 /**
  * @swagger
@@ -14,6 +17,8 @@ const documentController = new DocumentController();
  *       - Documents
  *     summary: Uploader un nouveau document
  *     description: Permet d'uploader un document avec des métadonnées
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -46,7 +51,7 @@ const documentController = new DocumentController();
  *       400:
  *         description: Données invalides
  */
-router.post('/upload', (req, res) => documentController.uploadDocument(req, res));
+router.post('/upload', authMiddleware, upload.single('file'), (req, res) => documentController.uploadDocument(req, res));
 
 /**
  * POST /api/documents/upload-multiple
@@ -59,7 +64,10 @@ router.post('/upload', (req, res) => documentController.uploadDocument(req, res)
  * - groupePartageIds: string[] (optionnel, si non fourni -> groupe public)
  * - isdownloadable: boolean (optionnel, défaut: true)
  */
-router.post('/upload-multiple', (req, res) => documentController.uploadMultipleDocuments(req, res));
+router.post('/upload-multiple', authMiddleware, upload.array('files', 20), (req, res) => documentController.uploadMultipleDocuments(req, res));
+
+// Apply auth middleware to all other routes (after upload routes)
+router.use(authMiddleware);
 
 // ========== ROUTES CRUD DE BASE ==========
 

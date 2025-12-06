@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { GroupePartageController } from '../controllers/GroupePartageController';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requireAdmin, requireTeacher } from '../middleware/auth';
 import { requireGroupAdmin, requirePublisherOrAdmin } from '../middleware/groupAuth';
 
 const router = Router();
@@ -38,7 +38,7 @@ const groupePartageController = new GroupePartageController();
  * Récupérer tous les groupes de partage
  */
 router.get('/',
-    // authMiddleware,
+    authMiddleware,
     groupePartageController.getAllGroupePartage.bind(groupePartageController)
 );
 
@@ -46,7 +46,10 @@ router.get('/',
  * GET /api/groupes/:id
  * Récupérer un groupe de partage par son ID
  */
-router.get('/:id', groupePartageController.getGroupeById.bind(groupePartageController));
+router.get('/:id',
+    authMiddleware,
+    groupePartageController.getGroupeById.bind(groupePartageController)
+);
 
 /**
  * POST /api/groupes-partage/custom/create
@@ -54,7 +57,7 @@ router.get('/:id', groupePartageController.getGroupeById.bind(groupePartageContr
  * L'utilisateur connecté est automatiquement le propriétaire
  */
 router.post('/custom/create',
-    // authMiddleware,  // ✨ Authentification requise
+    authMiddleware,  // ✨ Authentification requise
     (req, res) => groupePartageController.createCustomGroupe(req, res)
 );
 
@@ -63,8 +66,8 @@ router.post('/custom/create',
  * Créer une école avec son groupe (admin uniquement)
  */
 router.post('/ecole/create',
-    // authMiddleware,
-    // requireAdmin,  // ✨ Admin uniquement
+    authMiddleware,
+    requireAdmin,  // ✨ Admin uniquement
     (req, res) => groupePartageController.createEcoleWithGroupe(req, res)
 );
 
@@ -73,8 +76,8 @@ router.post('/ecole/create',
  * Créer une filière avec son groupe (admin uniquement)
  */
 router.post('/groupes-partage/filiere/create',
-    // authMiddleware,
-    // requireAdmin,
+    authMiddleware,
+    requireAdmin,
     (req, res) => groupePartageController.createFiliereWithGroupe(req, res)
 );
 
@@ -83,8 +86,8 @@ router.post('/groupes-partage/filiere/create',
  * Créer une classe avec son groupe (admin ou enseignant)
  */
 router.post('/classe/create',
-    // authMiddleware,
-    // requireTeacher,
+    authMiddleware,
+    requireTeacher,
     (req, res) => groupePartageController.createClasseWithGroupe(req, res)
 );
 
@@ -93,7 +96,7 @@ router.post('/classe/create',
  * Ajouter un utilisateur à un groupe (authentification requise)
  */
 router.post('/user/add',
-    // authMiddleware,
+    authMiddleware,
     (req, res) => groupePartageController.addUserToCustomGroupe(req, res)
 );
 
@@ -102,7 +105,7 @@ router.post('/user/add',
  * Récupérer les groupes d'un enseignant (authentification requise)
  */
 router.get('/enseignant/:enseignantId/groupes',
-    // authMiddleware,
+    authMiddleware,
     (req, res) => groupePartageController.getEnseignantGroupes(req, res)
 );
 

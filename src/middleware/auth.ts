@@ -12,9 +12,9 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
   try {
     // Récupérer le token depuis le header Authorization
     const authHeader = req.header('Authorization');
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         message: 'Token d\'accès manquant',
         error: 'NO_TOKEN'
       });
@@ -26,7 +26,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
       console.error('JWT_SECRET non défini dans les variables d\'environnement');
-      return res.status(500).json({ 
+      return res.status(500).json({
         message: 'Erreur de configuration du serveur',
         error: 'MISSING_JWT_SECRET'
       });
@@ -37,14 +37,14 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 
     // Récupérer l'utilisateur depuis la base de données
     const userRepository = AppDataSource.getRepository(User);
-    const user = await userRepository.findOne({ 
+    const user = await userRepository.findOne({
       where: { id: decoded.userId },
       relations: ['school', 'classe', 'groupesPartage', 'enseignements']
     });
 
     // Vérifier l'existence de l'utilisateur
     if (!user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         message: 'Utilisateur non trouvé',
         error: 'USER_NOT_FOUND'
       });
@@ -52,7 +52,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 
     // Vérifier que l'utilisateur est actif
     if (!user.isActive) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         message: 'Compte désactivé',
         error: 'ACCOUNT_DISABLED'
       });
@@ -60,7 +60,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 
     // Vérifier que l'utilisateur n'est pas suspendu
     if (user.isSuspended) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         message: 'Compte suspendu',
         error: 'ACCOUNT_SUSPENDED'
       });
@@ -76,20 +76,20 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 
     // Gestion des erreurs JWT spécifiques
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
+      return res.status(401).json({
         message: 'Token expiré',
         error: 'TOKEN_EXPIRED'
       });
     }
 
     if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
+      return res.status(401).json({
         message: 'Token invalide',
         error: 'INVALID_TOKEN'
       });
     }
 
-    return res.status(401).json({ 
+    return res.status(401).json({
       message: 'Erreur d\'authentification',
       error: 'AUTH_ERROR'
     });
@@ -103,14 +103,14 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 export const requireRole = (...allowedRoles: UserRole[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         message: 'Utilisateur non authentifié',
         error: 'NOT_AUTHENTICATED'
       });
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         message: 'Accès refusé. Rôle insuffisant.',
         error: 'INSUFFICIENT_ROLE',
         required: allowedRoles,
@@ -137,14 +137,14 @@ export const requireTeacher = requireRole(UserRole.ENSEIGNANT, UserRole.ADMIN, U
  */
 export const requireSchoolMembership = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.user) {
-    return res.status(401).json({ 
+    return res.status(401).json({
       message: 'Utilisateur non authentifié',
       error: 'NOT_AUTHENTICATED'
     });
   }
 
   if (!req.user.school) {
-    return res.status(403).json({ 
+    return res.status(403).json({
       message: 'Utilisateur non associé à une école',
       error: 'NO_SCHOOL'
     });
@@ -158,14 +158,14 @@ export const requireSchoolMembership = (req: AuthRequest, res: Response, next: N
  */
 export const requireClassMembership = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.user) {
-    return res.status(401).json({ 
+    return res.status(401).json({
       message: 'Utilisateur non authentifié',
       error: 'NOT_AUTHENTICATED'
     });
   }
 
   if (!req.user.classe) {
-    return res.status(403).json({ 
+    return res.status(403).json({
       message: 'Utilisateur non associé à une classe',
       error: 'NO_CLASS'
     });
@@ -181,7 +181,7 @@ export const requireClassMembership = (req: AuthRequest, res: Response, next: Ne
 export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.header('Authorization');
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       // Pas de token, on continue sans utilisateur
       return next();
@@ -189,14 +189,14 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
 
     const token = authHeader.replace('Bearer ', '');
     const jwtSecret = process.env.JWT_SECRET;
-    
+
     if (!jwtSecret) {
       return next();
     }
 
     const decoded = jwt.verify(token, jwtSecret) as { userId: string };
     const userRepository = AppDataSource.getRepository(User);
-    const user = await userRepository.findOne({ 
+    const user = await userRepository.findOne({
       where: { id: decoded.userId },
       relations: ['school', 'classe', 'groupesPartage']
     });
@@ -218,14 +218,14 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
  */
 export const requireVerified = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.user) {
-    return res.status(401).json({ 
+    return res.status(401).json({
       message: 'Utilisateur non authentifié',
       error: 'NOT_AUTHENTICATED'
     });
   }
 
   if (!req.user.isVerified) {
-    return res.status(403).json({ 
+    return res.status(403).json({
       message: 'Email non vérifié. Veuillez vérifier votre email.',
       error: 'EMAIL_NOT_VERIFIED'
     });
@@ -241,7 +241,7 @@ export const requireVerified = (req: AuthRequest, res: Response, next: NextFunct
 export const requireResourceAccess = (getResourceGroupIds: (req: AuthRequest) => Promise<string[]>) => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         message: 'Utilisateur non authentifié',
         error: 'NOT_AUTHENTICATED'
       });
@@ -249,18 +249,18 @@ export const requireResourceAccess = (getResourceGroupIds: (req: AuthRequest) =>
 
     try {
       const resourceGroupIds = await getResourceGroupIds(req);
-      
+
       // Récupérer tous les groupes de l'utilisateur
       const userGroupIds: string[] = [];
-      
+
       if (req.user.groupesPartage) {
         req.user.groupesPartage.forEach(g => userGroupIds.push(g.id));
       }
-      
+
       if (req.user.classe?.groupePartage) {
         userGroupIds.push(req.user.classe.groupePartage.id);
       }
-      
+
       if (req.user.school?.groupePartage) {
         userGroupIds.push(req.user.school.groupePartage.id);
       }
@@ -274,7 +274,7 @@ export const requireResourceAccess = (getResourceGroupIds: (req: AuthRequest) =>
       const hasAccess = resourceGroupIds.some(id => userGroupIds.includes(id));
 
       if (!hasAccess) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           message: 'Accès refusé à cette ressource',
           error: 'ACCESS_DENIED'
         });
@@ -283,7 +283,7 @@ export const requireResourceAccess = (getResourceGroupIds: (req: AuthRequest) =>
       next();
     } catch (error) {
       console.error('Erreur lors de la vérification d\'accès:', error);
-      return res.status(500).json({ 
+      return res.status(500).json({
         message: 'Erreur lors de la vérification des permissions',
         error: 'PERMISSION_CHECK_ERROR'
       });

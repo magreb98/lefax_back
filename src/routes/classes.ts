@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { ClasseController } from '../controllers/ClasseController';
 import { validateDto } from '../middleware/validateDto';
 import { CreateClasseDto } from '../dtos/classe.dto';
+import { authMiddleware, requireAdmin, requireTeacher } from '../middleware/auth';
 
 const router = Router();
 const classeController = new ClasseController();
@@ -31,7 +32,7 @@ const classeController = new ClasseController();
  * POST /api/classes
  * Créer une nouvelle classe
  */
-router.post('/', validateDto(CreateClasseDto), (req, res) => classeController.createClasse(req, res));
+router.post('/', authMiddleware, requireAdmin, validateDto(CreateClasseDto), (req, res) => classeController.createClasse(req, res));
 
 /**
  * GET /api/classes
@@ -40,7 +41,7 @@ router.post('/', validateDto(CreateClasseDto), (req, res) => classeController.cr
  * - filiereId: string (optionnel) - Filtrer par filière
  * - ecoleId: string (optionnel) - Filtrer par école
  */
-router.get('/', (req, res) => classeController.getClasses(req, res));
+router.get('/', authMiddleware, (req, res) => classeController.getClasses(req, res));
 
 /**
  * GET /api/classes/:id
@@ -48,7 +49,7 @@ router.get('/', (req, res) => classeController.getClasses(req, res));
  * Params:
  * - id: string (requis) - ID de la classe
  */
-router.get('/:id', (req, res) => classeController.getClasseById(req, res));
+router.get('/:id', authMiddleware, (req, res) => classeController.getClasseById(req, res));
 
 /**
  * PUT /api/classes/:id
@@ -59,7 +60,7 @@ router.get('/:id', (req, res) => classeController.getClasseById(req, res));
  * - name: string (optionnel) - Nouveau nom de la classe
  * - filiereId: string (optionnel) - Nouvelle filière
  */
-router.put('/:id', (req, res) => classeController.updateClasse(req, res));
+router.put('/:id', authMiddleware, requireAdmin, (req, res) => classeController.updateClasse(req, res));
 
 /**
  * DELETE /api/classes/:id
@@ -67,7 +68,7 @@ router.put('/:id', (req, res) => classeController.updateClasse(req, res));
  * Params:
  * - id: string (requis) - ID de la classe
  */
-router.delete('/:id', (req, res) => classeController.deleteClasse(req, res));
+router.delete('/:id', authMiddleware, requireAdmin, (req, res) => classeController.deleteClasse(req, res));
 
 /**
  * POST /api/classes/:id/sync-groupe
@@ -75,7 +76,7 @@ router.delete('/:id', (req, res) => classeController.deleteClasse(req, res));
  * Params:
  * - id: string (requis) - ID de la classe
  */
-router.post('/:id/sync-groupe', (req, res) => classeController.syncClasseGroupe(req, res));
+router.post('/:id/sync-groupe', authMiddleware, requireAdmin, (req, res) => classeController.syncClasseGroupe(req, res));
 
 /**
  * GET /api/classes/:id/students
@@ -83,7 +84,7 @@ router.post('/:id/sync-groupe', (req, res) => classeController.syncClasseGroupe(
  * Params:
  * - id: string (requis) - ID de la classe
  */
-router.get('/:id/students', (req, res) => classeController.getStudentsByClasse(req, res));
+router.get('/:id/students', authMiddleware, (req, res) => classeController.getStudentsByClasse(req, res));
 
 /**
  * GET /api/classes/:id/matieres
@@ -91,7 +92,7 @@ router.get('/:id/students', (req, res) => classeController.getStudentsByClasse(r
  * Params:
  * - id: string (requis) - ID de la classe
  */
-router.get('/:id/matieres', (req, res) => classeController.getMatieresByClasse(req, res));
+router.get('/:id/matieres', authMiddleware, (req, res) => classeController.getMatieresByClasse(req, res));
 
 /**
  * POST /api/classes/:classeId/delegate/:userId
@@ -100,7 +101,7 @@ router.get('/:id/matieres', (req, res) => classeController.getMatieresByClasse(r
  * - classeId: string (requis) - ID de la classe
  * - userId: string (requis) - ID de l'utilisateur
  */
-router.post('/:classeId/delegate/:userId', (req, res) => classeController.setDelegate(req, res));
+router.post('/:classeId/delegate/:userId', authMiddleware, requireTeacher, (req, res) => classeController.setDelegate(req, res));
 
 /**
  * DELETE /api/classes/:classeId/delegate/:userId
@@ -109,7 +110,7 @@ router.post('/:classeId/delegate/:userId', (req, res) => classeController.setDel
  * - classeId: string (requis) - ID de la classe
  * - userId: string (requis) - ID de l'utilisateur
  */
-router.delete('/:classeId/delegate/:userId', (req, res) => classeController.removeDelegate(req, res));
+router.delete('/:classeId/delegate/:userId', authMiddleware, requireTeacher, (req, res) => classeController.removeDelegate(req, res));
 
 /**
  * POST /api/classes/groupes/:groupeId/classes/:classeId
@@ -118,7 +119,7 @@ router.delete('/:classeId/delegate/:userId', (req, res) => classeController.remo
  * - groupeId: string (requis)
  * - classeId: string (requis)
  */
-router.post('/groupes/:groupeId/classes/:classeId', (req, res) => classeController.addClasseToGroupe(req, res));
+router.post('/groupes/:groupeId/classes/:classeId', authMiddleware, requireAdmin, (req, res) => classeController.addClasseToGroupe(req, res));
 
 /**
  * DELETE /api/classes/groupes/:groupeId/classes/:classeId
@@ -127,7 +128,7 @@ router.post('/groupes/:groupeId/classes/:classeId', (req, res) => classeControll
  * - groupeId: string (requis)
  * - classeId: string (requis)
  */
-router.delete('/groupes/:groupeId/classes/:classeId', (req, res) => classeController.removeClasseFromGroupe(req, res));
+router.delete('/groupes/:groupeId/classes/:classeId', authMiddleware, requireAdmin, (req, res) => classeController.removeClasseFromGroupe(req, res));
 
 /**
  * POST /api/classes/groupes/sync/classe/:classeId
@@ -135,6 +136,6 @@ router.delete('/groupes/:groupeId/classes/:classeId', (req, res) => classeContro
  * Params:
  * - classeId: string (requis)
  */
-router.post('/groupes/sync/classe/:classeId', (req, res) => classeController.syncClasseGroupePartage(req, res));
+router.post('/groupes/sync/classe/:classeId', authMiddleware, requireAdmin, (req, res) => classeController.syncClasseGroupePartage(req, res));
 
 export default router;
