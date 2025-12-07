@@ -214,6 +214,104 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
 };
 
 /**
+ * Middleware d'authentification qui accepte le token depuis le header OU le query parameter
+ * Utilisé pour les endpoints qui doivent être accessibles via iframe/embed (ex: visualisation de documents)
+ */
+export const authMiddlewareWithQueryToken = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    // Essayer de récupérer le token depuis le header Authorization
+    let token: string | undefined;
+    const authHeader = req.header('Authorization');
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.replace('Bearer ', '');
+    } else if (req.query.token && typeof req.query.token === 'string') {
+      // Sinon, essayer depuis le query parameter
+      token = req.query.token;
+    }
+
+    if (!token) {
+      return res.status(401).json({
+        message: 'Token d\'accès manquant',
+        error: 'NO_TOKEN'
+      });
+    }
+
+    // Vérifier la présence du JWT_SECRET
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('JWT_SECRET non défini dans les variables d\'environnement');
+      return res.status(500).json({
+        message: 'Erreur de configuration du serveur',
+        error: 'MISSING_JWT_SECRET'
+      });
+    }
+
+    // Décoder et vérifier le token
+    const decoded = jwt.verify(token, jwtSecret) as { userId: string; email: string; role: string };
+
+    // Récupérer l'utilisateur depuis la base de données
+    const userRepository = AppDataSource.getRepository(User);
+    const user = await userRepository.findOne({
+      where: { id: decoded.userId },
+      relations: ['school', 'school.groupePartage', 'classe', 'classe.groupePartage', 'groupesPartage', 'enseignements']
+    });
+
+    // Vérifier l'existence de l'utilisateur
+    if (!user) {
+      return res.status(401).json({
+        message: 'Utilisateur non trouvé',
+        error: 'USER_NOT_FOUND'
+      });
+    }
+
+    // Vérifier que l'utilisateur est actif
+    if (!user.isActive) {
+      return res.status(403).json({
+        message: 'Compte désactivé',
+        error: 'ACCOUNT_DISABLED'
+      });
+    }
+
+    // Vérifier que l'utilisateur n'est pas suspendu
+    if (user.isSuspended) {
+      return res.status(403).json({
+        message: 'Compte suspendu',
+        error: 'ACCOUNT_SUSPENDED'
+      });
+    }
+
+    // Attacher l'utilisateur à la requête
+    req.user = user;
+    req.userId = user.id;
+
+    next();
+  } catch (error: any) {
+    console.error('Erreur d\'authentification:', error);
+
+    // Gestion des erreurs JWT spécifiques
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        message: 'Token expiré',
+        error: 'TOKEN_EXPIRED'
+      });
+    }
+
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        message: 'Token invalide',
+        error: 'INVALID_TOKEN'
+      });
+    }
+
+    return res.status(401).json({
+      message: 'Erreur d\'authentification',
+      error: 'AUTH_ERROR'
+    });
+  }
+};
+
+/**
  * Middleware pour vérifier que l'utilisateur est vérifié
  */
 export const requireVerified = (req: AuthRequest, res: Response, next: NextFunction) => {

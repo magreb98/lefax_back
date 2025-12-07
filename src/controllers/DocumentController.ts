@@ -376,7 +376,47 @@ export class DocumentController {
     }
 
     /**
+     * Vérifier si un utilisateur a accès à un document
+     * (appartient à au moins un groupe du document ou est admin)
+     */
+    private async userHasDocumentAccess(user: any, document: any): Promise<boolean> {
+        // Les admins et superadmins ont toujours accès
+        if (user.role === 'admin' || user.role === 'superadmin') {
+            return true;
+        }
+
+        // Si le document n'a pas de groupes, accès refusé
+        if (!document.groupesPartage || document.groupesPartage.length === 0) {
+            return false;
+        }
+
+        const documentGroupIds = document.groupesPartage.map((g: any) => g.id);
+
+        // Récupérer tous les groupes de l'utilisateur
+        const userGroupIds: string[] = [];
+
+        // Groupes directs
+        if (user.groupesPartage) {
+            user.groupesPartage.forEach((g: any) => userGroupIds.push(g.id));
+        }
+
+        // Groupe de la classe
+        if (user.classe?.groupePartage) {
+            userGroupIds.push(user.classe.groupePartage.id);
+        }
+
+        // Groupe de l'école
+        if (user.school?.groupePartage) {
+            userGroupIds.push(user.school.groupePartage.id);
+        }
+
+        // Vérifier l'intersection
+        return documentGroupIds.some((gId: string) => userGroupIds.includes(gId));
+    }
+
+    /**
      * Télécharger un document
+     * Vérifie que l'utilisateur appartient à au moins un groupe du document
      */
     async downloadDocument(req: any, res: any): Promise<void> {
         try {
@@ -389,6 +429,19 @@ export class DocumentController {
 
             if (!document.isdownloadable) {
                 return res.status(403).json({ message: 'Ce document n\'est pas téléchargeable' });
+            }
+
+            // Vérifier que l'utilisateur a accès au document
+            if (!req.user) {
+                return res.status(401).json({ message: 'Utilisateur non authentifié' });
+            }
+
+            const hasAccess = await this.userHasDocumentAccess(req.user, document);
+            if (!hasAccess) {
+                return res.status(403).json({
+                    message: 'Vous n\'avez pas accès à ce document',
+                    error: 'ACCESS_DENIED'
+                });
             }
 
             if (!fs.existsSync(document.documentUrl)) {
@@ -404,6 +457,57 @@ export class DocumentController {
             console.error('Erreur lors du téléchargement du document :', error);
             res.status(500).json({
                 message: 'Erreur serveur lors du téléchargement du document',
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Visualiser un document dans le navigateur
+     * Vérifie que l'utilisateur appartient à au moins un groupe du document
+     */
+    async viewDocument(req: any, res: any): Promise<void> {
+        try {
+            const { id } = req.params;
+            const document = await this.documentService.getDocumentById(id);
+
+            if (!document) {
+                return res.status(404).json({ message: 'Document non trouvé' });
+            }
+
+            // Vérifier que l'utilisateur a accès au document
+            if (!req.user) {
+                return res.status(401).json({ message: 'Utilisateur non authentifié' });
+            }
+
+            const hasAccess = await this.userHasDocumentAccess(req.user, document);
+            if (!hasAccess) {
+                return res.status(403).json({
+                    message: 'Vous n\'avez pas accès à ce document',
+                    error: 'ACCESS_DENIED'
+                });
+            }
+
+            if (!fs.existsSync(document.documentUrl)) {
+                return res.status(404).json({ message: 'Fichier non trouvé sur le serveur' });
+            }
+
+            // Incrémenter le compteur de vues
+            await this.documentService.incrementViewCount(id);
+
+            // Déterminer le type MIME
+            const mimeType = document.fileType || 'application/octet-stream';
+
+            // Envoyer le fichier avec Content-Disposition: inline pour l'affichage dans le navigateur
+            res.setHeader('Content-Type', mimeType);
+            res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.documentName)}"`);
+
+            const fileStream = fs.createReadStream(document.documentUrl);
+            fileStream.pipe(res);
+        } catch (error: any) {
+            console.error('Erreur lors de la visualisation du document :', error);
+            res.status(500).json({
+                message: 'Erreur serveur lors de la visualisation du document',
                 error: error.message
             });
         }

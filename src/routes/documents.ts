@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { DocumentController } from '../controllers/DocumentController';
-import { authMiddleware, requireRole } from '../middleware/auth';
+import { authMiddleware, authMiddlewareWithQueryToken, requireRole } from '../middleware/auth';
 import { upload } from '../middleware/upload';
 
 const router = Router();
@@ -144,10 +144,20 @@ router.delete('/:id', (req, res) => documentController.deleteDocument(req, res))
 router.post('/delete-multiple', (req, res) => documentController.deleteMultipleDocuments(req, res));
 
 /**
+ * GET /api/documents/:id/view
+ * Visualiser un document dans le navigateur (PDF, images, etc.)
+ * Vérifie que l'utilisateur appartient à au moins un groupe du document
+ * Accepte le token via header Authorization OU query parameter ?token=xxx
+ */
+router.get('/:id/view', authMiddlewareWithQueryToken, (req, res) => documentController.viewDocument(req, res));
+
+/**
  * GET /api/documents/:id/download
  * Télécharger un document
+ * Vérifie que l'utilisateur appartient à au moins un groupe du document
+ * Accepte le token via header Authorization OU query parameter ?token=xxx
  */
-router.get('/:id/download', (req, res) => documentController.downloadDocument(req, res));
+router.get('/:id/download', authMiddlewareWithQueryToken, (req, res) => documentController.downloadDocument(req, res));
 
 /**
  * POST /api/documents/groupe/add
