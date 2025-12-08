@@ -4,6 +4,9 @@ import path from 'path';
 import fs from 'fs';
 import { DocumentService } from '../services/DocumentService';
 import { canUserPublishToGroups } from '../middleware/groupAuth';
+import { AppDataSource } from '../config/database';
+import { GroupePartage } from '../entity/groupe.partage';
+
 
 export class DocumentController {
     private documentService = new DocumentService();
@@ -285,6 +288,24 @@ export class DocumentController {
             const { id } = req.params;
             const { documentName, description, categorieId, matiereId, groupePartageIds, isdownloadable } = req.body;
 
+            // Vérifier que l'utilisateur est autorisé à modifier ce document
+            const existingDocument = await this.documentService.getDocumentById(id);
+            if (!existingDocument) {
+                return res.status(404).json({ message: 'Document non trouvé' });
+            }
+
+            // Vérifier si l'utilisateur est le propriétaire ou un admin
+            // Note: req.user est peuplé par le middleware d'auth
+            const isOwner = existingDocument.addedBy && existingDocument.addedBy.id === req.user.id;
+            const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
+
+            if (!isOwner && !isAdmin) {
+                return res.status(403).json({
+                    message: 'Vous n\'êtes pas autorisé à modifier ce document',
+                    error: 'ACCESS_DENIED'
+                });
+            }
+
             // Parser les IDs des groupes de partage si fournis
             let parsedGroupePartageIds: string[] | undefined;
             if (groupePartageIds !== undefined) {
@@ -376,42 +397,41 @@ export class DocumentController {
     }
 
     /**
+     * Map MIME types to file extensions
+     */
+    private getExtensionFromMimeType(mimeType: string): string {
+        const mimeToExt: { [key: string]: string } = {
+            'application/pdf': '.pdf',
+            'image/jpeg': '.jpg',
+            'image/png': '.png',
+            'image/gif': '.gif',
+            'image/webp': '.webp',
+            'text/plain': '.txt',
+            'text/csv': '.csv',
+            'application/msword': '.doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+            'application/vnd.ms-excel': '.xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+            'application/vnd.ms-powerpoint': '.ppt',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+            'application/zip': '.zip',
+            'application/x-rar-compressed': '.rar',
+            'application/json': '.json',
+            'application/xml': '.xml',
+            'video/mp4': '.mp4',
+            'audio/mpeg': '.mp3'
+        };
+        return mimeToExt[mimeType] || '';
+    }
+
+    /**
      * Vérifier si un utilisateur a accès à un document
-     * (appartient à au moins un groupe du document ou est admin)
+     * Tous les utilisateurs authentifiés ont accès aux documents
      */
     private async userHasDocumentAccess(user: any, document: any): Promise<boolean> {
-        // Les admins et superadmins ont toujours accès
-        if (user.role === 'admin' || user.role === 'superadmin') {
-            return true;
-        }
-
-        // Si le document n'a pas de groupes, accès refusé
-        if (!document.groupesPartage || document.groupesPartage.length === 0) {
-            return false;
-        }
-
-        const documentGroupIds = document.groupesPartage.map((g: any) => g.id);
-
-        // Récupérer tous les groupes de l'utilisateur
-        const userGroupIds: string[] = [];
-
-        // Groupes directs
-        if (user.groupesPartage) {
-            user.groupesPartage.forEach((g: any) => userGroupIds.push(g.id));
-        }
-
-        // Groupe de la classe
-        if (user.classe?.groupePartage) {
-            userGroupIds.push(user.classe.groupePartage.id);
-        }
-
-        // Groupe de l'école
-        if (user.school?.groupePartage) {
-            userGroupIds.push(user.school.groupePartage.id);
-        }
-
-        // Vérifier l'intersection
-        return documentGroupIds.some((gId: string) => userGroupIds.includes(gId));
+        // Tous les utilisateurs authentifiés ont accès aux documents
+        // Cette méthode est conservée pour une éventuelle logique future
+        return true;
     }
 
     /**
@@ -427,23 +447,6 @@ export class DocumentController {
                 return res.status(404).json({ message: 'Document non trouvé' });
             }
 
-            if (!document.isdownloadable) {
-                return res.status(403).json({ message: 'Ce document n\'est pas téléchargeable' });
-            }
-
-            // Vérifier que l'utilisateur a accès au document
-            if (!req.user) {
-                return res.status(401).json({ message: 'Utilisateur non authentifié' });
-            }
-
-            const hasAccess = await this.userHasDocumentAccess(req.user, document);
-            if (!hasAccess) {
-                return res.status(403).json({
-                    message: 'Vous n\'avez pas accès à ce document',
-                    error: 'ACCESS_DENIED'
-                });
-            }
-
             if (!fs.existsSync(document.documentUrl)) {
                 return res.status(404).json({ message: 'Fichier non trouvé sur le serveur' });
             }
@@ -451,8 +454,17 @@ export class DocumentController {
             // Incrémenter le compteur de téléchargements
             await this.documentService.incrementDownloadCount(id);
 
+            // Déterminer le nom du fichier avec la bonne extension
+            let filename = document.documentName;
+            const extension = this.getExtensionFromMimeType(document.fileType);
+
+            // Si le nom du document ne finit pas déjà par la bonne extension, on l'ajoute
+            if (extension && !filename.toLowerCase().endsWith(extension)) {
+                filename += extension;
+            }
+
             // Envoyer le fichier
-            res.download(document.documentUrl, document.documentName);
+            res.download(document.documentUrl, filename);
         } catch (error: any) {
             console.error('Erreur lors du téléchargement du document :', error);
             res.status(500).json({
@@ -498,9 +510,17 @@ export class DocumentController {
             // Déterminer le type MIME
             const mimeType = document.fileType || 'application/octet-stream';
 
+            // Déterminer le nom du fichier avec la bonne extension
+            let filename = document.documentName;
+            const extension = this.getExtensionFromMimeType(document.fileType);
+
+            if (extension && !filename.toLowerCase().endsWith(extension)) {
+                filename += extension;
+            }
+
             // Envoyer le fichier avec Content-Disposition: inline pour l'affichage dans le navigateur
             res.setHeader('Content-Type', mimeType);
-            res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(document.documentName)}"`);
+            res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
 
             const fileStream = fs.createReadStream(document.documentUrl);
             fileStream.pipe(res);

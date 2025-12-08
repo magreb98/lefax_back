@@ -43,7 +43,7 @@ export class EcoleController {
     async getEcoles(req: any, res: any): Promise<void> {
         try {
             const ecoles = await this.ecoleRepository.find({
-                relations: ['groupePartage', 'groupePartage.users', 'filieres'],
+                relations: ['groupePartage', 'groupePartage.users', 'filieres', 'filieres.classes', 'students'],
                 order: { createdAt: 'DESC' }
             });
 

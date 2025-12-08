@@ -28,7 +28,9 @@ export class GroupePartageService {
     // }
 
     async getAllGroupePartage(): Promise<GroupePartage[]> {
-        return this.groupePartageRepository.find();
+        return this.groupePartageRepository.find({
+            relations: ['users', 'documents', 'owner']
+        });
     }
 
     /**
