@@ -4,6 +4,7 @@ import { Filiere } from "../entity/filiere";
 import { Ecole } from "../entity/ecole";
 import { GroupePartageService } from "../services/GroupePartageService";
 import { formatErrorResponse } from "../util/helper";
+import { UserRole } from "../entity/user";
 
 export class FiliereController {
     private filiereRepository = AppDataSource.getRepository(Filiere);
@@ -14,17 +15,40 @@ export class FiliereController {
     async createFiliere(req: any, res: any): Promise<void> {
         try {
             const { name, description, ecoleId } = req.body;
+            const user = (req as any).user;
 
             if (!name || !ecoleId) {
-                return res.status(400).json({ 
-                    message: 'Les champs name et ecoleId sont requis' 
+                return res.status(400).json({
+                    message: 'Les champs name et ecoleId sont requis'
                 });
+            }
+
+            // Vérifier que l'utilisateur est authentifié
+            if (!user) {
+                return res.status(401).json({ message: 'Utilisateur non authentifié' });
             }
 
             // Vérifier que l'école existe
             const ecole = await this.ecoleRepository.findOne({ where: { id: ecoleId } });
             if (!ecole) {
                 return res.status(404).json({ message: 'École non trouvée' });
+            }
+
+            // Vérifier que l'admin a une école et qu'elle correspond
+            if (user.role === UserRole.ADMIN) {
+                if (!user.school || !user.school.id) {
+                    return res.status(403).json({
+                        message: 'Vous devez être associé à une école pour créer une filière',
+                        error: 'NO_SCHOOL_ASSIGNED'
+                    });
+                }
+
+                if (ecoleId !== user.school.id) {
+                    return res.status(403).json({
+                        message: 'Vous ne pouvez créer une filière que dans votre propre école',
+                        error: 'NOT_YOUR_SCHOOL'
+                    });
+                }
             }
 
             // Créer la filière avec son groupe de partage
@@ -37,9 +61,9 @@ export class FiliereController {
             // Synchroniser le groupe de partage de l'école
             await this.groupePartageService.syncEcoleGroupePartage(ecoleId);
 
-            res.status(201).json({ 
-                message: 'Filière créée avec succès', 
-                filiere 
+            res.status(201).json({
+                message: 'Filière créée avec succès',
+                filiere
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -55,9 +79,9 @@ export class FiliereController {
                 order: { createdAt: 'DESC' }
             });
 
-            res.status(200).json({ 
+            res.status(200).json({
                 count: filieres.length,
-                filieres 
+                filieres
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -92,8 +116,8 @@ export class FiliereController {
 
             await this.groupePartageService.syncFiliereGroupePartage(id);
 
-            res.status(200).json({ 
-                message: 'Groupe de partage synchronisé avec succès' 
+            res.status(200).json({
+                message: 'Groupe de partage synchronisé avec succès'
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -118,9 +142,9 @@ export class FiliereController {
 
             await this.filiereRepository.save(filiere);
 
-            res.status(200).json({ 
-                message: 'Filière mise à jour avec succès', 
-                filiere 
+            res.status(200).json({
+                message: 'Filière mise à jour avec succès',
+                filiere
             });
         } catch (error) {
             console.error('Erreur:', error);
@@ -132,7 +156,7 @@ export class FiliereController {
     async deleteFiliere(req: any, res: any): Promise<void> {
         try {
             const { id } = req.params;
-            const filiere = await this.filiereRepository.findOne({ 
+            const filiere = await this.filiereRepository.findOne({
                 where: { id },
                 relations: ['groupePartage', 'school']
             });
@@ -154,55 +178,55 @@ export class FiliereController {
         }
     }
 
-    
-      /**
-       * Ajouter une filière à un groupe
-       * POST /api/users/groupes/:groupeId/filieres/:filiereId
-       */
-      async addFiliereToGroupe(req: Request, res: Response): Promise < void> {
-      try {
-        const { groupeId, filiereId } = req.params;
-    
-        await this.groupePartageService.addFiliereToGroupe(filiereId, groupeId);
-    
-        res.json({ message: 'Filière ajoutée au groupe avec succès' });
-      } catch(error) {
-        console.error('Erreur lors de l\'ajout de la filière au groupe:', error);
-        res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de l\'ajout de la filière au groupe' });
-      }
-    }
-    
-      /**
-       * Retirer une filière d'un groupe
-       * DELETE /api/users/groupes/:groupeId/filieres/:filiereId
-       */
-      async removeFiliereFromGroupe(req: Request, res: Response): Promise < void> {
-      try {
-        const { groupeId, filiereId } = req.params;
-    
-        await this.groupePartageService.removeFiliereFromGroupe(filiereId, groupeId);
-    
-        res.json({ message: 'Filière retirée du groupe avec succès' });
-      } catch(error) {
-        console.error('Erreur lors du retrait de la filière du groupe:', error);
-        res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors du retrait de la filière du groupe' });
-      }
+
+    /**
+     * Ajouter une filière à un groupe
+     * POST /api/users/groupes/:groupeId/filieres/:filiereId
+     */
+    async addFiliereToGroupe(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, filiereId } = req.params;
+
+            await this.groupePartageService.addFiliereToGroupe(filiereId, groupeId);
+
+            res.json({ message: 'Filière ajoutée au groupe avec succès' });
+        } catch (error) {
+            console.error('Erreur lors de l\'ajout de la filière au groupe:', error);
+            res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de l\'ajout de la filière au groupe' });
+        }
     }
 
-      /**
-       * Synchroniser le groupe de partage d'une filière
-       * POST /api/users/groupes/sync/filiere/:filiereId
-       */
-      async syncFiliereGroupePartage(req: Request, res: Response): Promise < void> {
-      try {
-        const { filiereId } = req.params;
-    
-        await this.groupePartageService.syncFiliereGroupePartage(filiereId);
-    
-        res.json({ message: 'Groupe de la filière synchronisé avec succès' });
-      } catch(error) {
-        console.error('Erreur lors de la synchronisation du groupe de la filière:', error);
-        res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de la synchronisation du groupe de la filière' });
-      }
+    /**
+     * Retirer une filière d'un groupe
+     * DELETE /api/users/groupes/:groupeId/filieres/:filiereId
+     */
+    async removeFiliereFromGroupe(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, filiereId } = req.params;
+
+            await this.groupePartageService.removeFiliereFromGroupe(filiereId, groupeId);
+
+            res.json({ message: 'Filière retirée du groupe avec succès' });
+        } catch (error) {
+            console.error('Erreur lors du retrait de la filière du groupe:', error);
+            res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors du retrait de la filière du groupe' });
+        }
+    }
+
+    /**
+     * Synchroniser le groupe de partage d'une filière
+     * POST /api/users/groupes/sync/filiere/:filiereId
+     */
+    async syncFiliereGroupePartage(req: Request, res: Response): Promise<void> {
+        try {
+            const { filiereId } = req.params;
+
+            await this.groupePartageService.syncFiliereGroupePartage(filiereId);
+
+            res.json({ message: 'Groupe de la filière synchronisé avec succès' });
+        } catch (error) {
+            console.error('Erreur lors de la synchronisation du groupe de la filière:', error);
+            res.status(500).json({ message: error instanceof Error ? error.message : 'Erreur lors de la synchronisation du groupe de la filière' });
+        }
     }
 }

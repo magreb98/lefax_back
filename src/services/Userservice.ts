@@ -62,11 +62,56 @@ export class UserService {
 
         await this.userRepository.save(user);
 
+        // Auto-join user to public group
+        await this.addUserToPublicGroup(user.id);
+
         if (data.classeId) {
             await this.groupePartageService.syncClasseGroupePartage(data.classeId);
         }
 
         return user;
+    }
+
+    /**
+     * Trouver ou créer le groupe "Public"
+     */
+    private async findOrCreatePublicGroup(): Promise<GroupePartage> {
+        let publicGroup = await this.groupePartageRepository.findOne({
+            where: { groupeName: 'Public' },
+            relations: ['users']
+        });
+
+        if (!publicGroup) {
+            // Créer le groupe Public s'il n'existe pas
+            publicGroup = this.groupePartageRepository.create({
+                groupeName: 'Public',
+                description: 'Groupe public accessible à tous les utilisateurs',
+                type: 'custom' as any,
+                isActive: true
+            });
+            await this.groupePartageRepository.save(publicGroup);
+        }
+
+        return publicGroup;
+    }
+
+    /**
+     * Ajouter un utilisateur au groupe Public
+     */
+    private async addUserToPublicGroup(userId: string): Promise<void> {
+        try {
+            const publicGroup = await this.findOrCreatePublicGroup();
+
+            // Vérifier si l'utilisateur n'est pas déjà membre
+            const isMember = publicGroup.users?.some(u => u.id === userId);
+
+            if (!isMember) {
+                await this.groupePartageService.addUserToCustomGroupe(userId, publicGroup.id);
+            }
+        } catch (error) {
+            console.error('Erreur lors de l\'ajout au groupe Public:', error);
+            // Ne pas bloquer la création de l'utilisateur si l'ajout au groupe Public échoue
+        }
     }
 
     /**
@@ -186,8 +231,14 @@ export class UserService {
             user.school = classe.filiere.school;
         }
 
+
         await this.userRepository.save(user);
+
+        // Synchroniser le groupe de la classe
         await this.groupePartageService.syncClasseGroupePartage(classeId);
+
+        // Auto-enroll dans les groupes des matières de la classe
+        await this.groupePartageService.enrollStudentInClassMatiereGroupes(userId, classeId);
 
         return user;
     }
@@ -211,8 +262,12 @@ export class UserService {
 
         await this.userRepository.save(user);
 
+
         if (classeId) {
             await this.groupePartageService.syncClasseGroupePartage(classeId);
+
+            // Retirer l'étudiant des groupes des matières de l'ancienne classe
+            await this.groupePartageService.removeStudentFromClassMatiereGroupes(userId, classeId);
         }
 
         return user;
@@ -430,63 +485,69 @@ export class UserService {
     /**
  * Ajouter plusieurs utilisateurs à une classe
  */
-async addUsersToClasse(userIds: string[], classeId: string): Promise<User[]> {
-    const classe = await this.classRepository.findOne({
-        where: { id: classeId },
-        relations: ['filiere', 'filiere.school']
-    });
-    if (!classe) throw new Error('Classe non trouvée');
-
-    const users: User[] = [];
-
-    for (const userId of userIds) {
-        const user = await this.userRepository.findOne({
-            where: { id: userId },
-            relations: ['classe', 'school']
+    async addUsersToClasse(userIds: string[], classeId: string): Promise<User[]> {
+        const classe = await this.classRepository.findOne({
+            where: { id: classeId },
+            relations: ['filiere', 'filiere.school']
         });
-        
-        if (!user) {
-            console.warn(`Utilisateur ${userId} non trouvé, ignoré`);
-            continue;
+        if (!classe) throw new Error('Classe non trouvée');
+
+        const users: User[] = [];
+
+        for (const userId of userIds) {
+            const user = await this.userRepository.findOne({
+                where: { id: userId },
+                relations: ['classe', 'school']
+            });
+
+            if (!user) {
+                console.warn(`Utilisateur ${userId} non trouvé, ignoré`);
+                continue;
+            }
+
+            user.classe = classe;
+            if (user.role !== UserRole.ENSEIGNANT && user.role !== UserRole.ADMIN && user.role !== UserRole.SUPERADMIN) {
+                user.role = UserRole.ETUDIANT;
+            }
+
+            if (!user.school && classe.filiere?.school) {
+                user.school = classe.filiere.school;
+            }
+
+            await this.userRepository.save(user);
+            users.push(user);
         }
 
-        user.classe = classe;
-        if (user.role !== UserRole.ENSEIGNANT && user.role !== UserRole.ADMIN && user.role !== UserRole.SUPERADMIN) {
-            user.role = UserRole.ETUDIANT;
+
+        // Synchroniser le groupe de partage une seule fois après avoir ajouté tous les utilisateurs
+        await this.groupePartageService.syncClasseGroupePartage(classeId);
+
+        // Auto-enroll tous les utilisateurs dans les groupes des matières de la classe
+        for (const user of users) {
+            await this.groupePartageService.enrollStudentInClassMatiereGroupes(user.id, classeId);
         }
 
-        if (!user.school && classe.filiere?.school) {
-            user.school = classe.filiere.school;
-        }
-
-        await this.userRepository.save(user);
-        users.push(user);
+        return users;
     }
 
-    // Synchroniser le groupe de partage une seule fois après avoir ajouté tous les utilisateurs
-    await this.groupePartageService.syncClasseGroupePartage(classeId);
+    /**
+     * Changer l'école d'un utilisateur
+     */
+    async changeUserSchool(userId: string, schoolId: string): Promise<User> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId },
+            relations: ['school']
+        });
+        if (!user) throw new Error('Utilisateur non trouvé');
 
-    return users;
-}
+        const school = await this.ecoleRepository.findOne({
+            where: { id: schoolId }
+        });
+        if (!school) throw new Error('École non trouvée');
 
-/**
- * Changer l'école d'un utilisateur
- */
-async changeUserSchool(userId: string, schoolId: string): Promise<User> {
-    const user = await this.userRepository.findOne({
-        where: { id: userId },
-        relations: ['school']
-    });
-    if (!user) throw new Error('Utilisateur non trouvé');
-
-    const school = await this.ecoleRepository.findOne({
-        where: { id: schoolId }
-    });
-    if (!school) throw new Error('École non trouvée');
-
-    user.school = school;
-    return await this.userRepository.save(user);
-}
+        user.school = school;
+        return await this.userRepository.save(user);
+    }
 
     /**
      * Exclure un �tudiant d'une �cole
@@ -496,7 +557,7 @@ async changeUserSchool(userId: string, schoolId: string): Promise<User> {
             where: { id: studentId },
             relations: ['school', 'classe', 'groupesPartage']
         });
-        
+
         if (!student) throw new Error('�tudiant non trouv�');
         if (!student.school || student.school.id !== schoolId) {
             throw new Error('Cet étudiant n\'appartient pas à cette école');
@@ -540,8 +601,11 @@ async changeUserSchool(userId: string, schoolId: string): Promise<User> {
         await this.userRepository.save(student);
 
         // Synchroniser le groupe de la classe si n�cessaire
+        // Synchroniser le groupe de la classe si nécessaire
         if (classeId) {
             await this.groupePartageService.syncClasseGroupePartage(classeId);
+            // Retirer l'étudiant des groupes des matières de l'ancienne classe
+            await this.groupePartageService.removeStudentFromClassMatiereGroupes(studentId, classeId);
         }
 
         return student;
@@ -568,20 +632,20 @@ async changeUserSchool(userId: string, schoolId: string): Promise<User> {
             where: { id: userId },
             relations: ['school']
         });
-        
+
         if (!user) throw new Error('Utilisateur non trouv�');
-        
+
         const school = await this.ecoleRepository.findOne({
             where: { id: schoolId }
         });
-        
+
         if (!school) throw new Error('�cole non trouv�e');
-        
+
         // Promouvoir en enseignant si ce n'est pas d�j� le cas
         if (user.role === UserRole.USER) {
             user.role = UserRole.ENSEIGNANT;
         }
-        
+
         user.school = school;
         return await this.userRepository.save(user);
     }
@@ -594,18 +658,18 @@ async changeUserSchool(userId: string, schoolId: string): Promise<User> {
             where: { id: userId },
             relations: ['school']
         });
-        
+
         if (!user) throw new Error('Utilisateur non trouv�');
         if (!user.school || user.school.id !== schoolId) {
-                    throw new Error('Cet enseignant n\'appartient pas à cette école');
+            throw new Error('Cet enseignant n\'appartient pas à cette école');
         }
         if (user.role !== UserRole.ENSEIGNANT) {
             throw new Error('Cet utilisateur n\'est pas un enseignant');
         }
-        
+
         user.school = undefined;
         user.role = UserRole.USER;
-        
+
         return await this.userRepository.save(user);
     }
 
@@ -615,7 +679,7 @@ async changeUserSchool(userId: string, schoolId: string): Promise<User> {
     async grantViewAllGroupsPermission(userId: string): Promise<User> {
         const user = await this.userRepository.findOne({ where: { id: userId } });
         if (!user) throw new Error('Utilisateur non trouv�');
-        
+
         user.canViewAllGroups = true;
         return await this.userRepository.save(user);
     }
@@ -626,7 +690,7 @@ async changeUserSchool(userId: string, schoolId: string): Promise<User> {
     async revokeViewAllGroupsPermission(userId: string): Promise<User> {
         const user = await this.userRepository.findOne({ where: { id: userId } });
         if (!user) throw new Error('Utilisateur non trouv�');
-        
+
         user.canViewAllGroups = false;
         return await this.userRepository.save(user);
     }

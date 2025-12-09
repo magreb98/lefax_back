@@ -17,4 +17,7 @@ module.exports = {
     moduleFileExtensions: ['ts', 'js', 'json'],
     verbose: true,
     testTimeout: 10000,
+    moduleNameMapper: {
+        '^uuid$': '<rootDir>/tests/mocks/uuid.js',
+    },
 };

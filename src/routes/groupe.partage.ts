@@ -197,7 +197,7 @@ router.get('/:groupeId/categories',
  */
 router.post('/:groupeId/categories',
     authMiddleware,
-    requireGroupAdmin,
+    // requireGroupAdmin removed to allow public group access checks in service
     (req, res) => groupePartageController.createGroupCategory(req, res)
 );
 
@@ -219,6 +219,15 @@ router.delete('/:groupeId/categories/:categoryId',
     authMiddleware,
     requireGroupAdmin,
     (req, res) => groupePartageController.deleteGroupCategory(req, res)
+);
+
+/**
+ * PUT /api/groupes-partage/:groupeId/members/:userId/role
+ * Mettre à jour le rôle d'un membre (Règles strictes SuperAdmin/SchoolAdmin)
+ */
+router.put('/:groupeId/members/:userId/role',
+    authMiddleware,
+    (req, res) => groupePartageController.updateMemberRole(req, res)
 );
 
 export default router;

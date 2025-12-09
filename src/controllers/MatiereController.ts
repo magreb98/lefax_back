@@ -3,11 +3,14 @@ import { AppDataSource } from "../config/database";
 import { Matiere } from "../entity/matiere";
 import { Class } from "../entity/classe";
 import { Document } from "../entity/document";
+import { GroupePartageService } from "../services/GroupePartageService";
+import { UserRole } from "../entity/user";
 
 export class MatiereController {
 
     private matiereRepository = AppDataSource.getRepository(Matiere);
     private classeRepository = AppDataSource.getRepository(Class);
+    private groupePartageService = new GroupePartageService();
 
     /**
      * Récupérer toutes les matières avec filtrage optionnel
@@ -102,6 +105,7 @@ export class MatiereController {
     async createMatiere(req: Request, res: Response): Promise<void> {
         try {
             const { matiereName, classeId, description, matiereCode } = req.body;
+            const user = (req as any).user;
 
             if (!matiereName || !classeId) {
                 res.status(400).json({
@@ -110,10 +114,16 @@ export class MatiereController {
                 return;
             }
 
-            // Vérifier que la classe existe
+            // Vérifier que l'utilisateur est authentifié
+            if (!user) {
+                res.status(401).json({ message: 'Utilisateur non authentifié' });
+                return;
+            }
+
+            // Vérifier que la classe existe et charger ses relations
             const classe = await this.classeRepository.findOne({
                 where: { id: classeId },
-                relations: ['filiere']
+                relations: ['filiere', 'filiere.school']
             });
 
             if (!classe) {
@@ -121,18 +131,38 @@ export class MatiereController {
                 return;
             }
 
-            // Créer la matière
-            const newMatiere = this.matiereRepository.create({
-                matiereName,
-                classe,
-                description,
-                matiereCode
-            });
+            // Vérifier que l'admin a une école et qu'elle correspond
+            if (user.role === UserRole.ADMIN) {
+                if (!user.school || !user.school.id) {
+                    res.status(403).json({
+                        message: 'Vous devez être associé à une école pour créer une matière',
+                        error: 'NO_SCHOOL_ASSIGNED'
+                    });
+                    return;
+                }
 
-            await this.matiereRepository.save(newMatiere);
+                const classeSchoolId = classe.filiere?.school?.id;
+                if (!classeSchoolId || classeSchoolId !== user.school.id) {
+                    res.status(403).json({
+                        message: 'Cette classe n\'appartient pas à votre école',
+                        error: 'NOT_YOUR_SCHOOL'
+                    });
+                    return;
+                }
+            }
+
+            // Créer la matière avec son groupe de partage et auto-enroll les étudiants
+            const matiereData = {
+                matiereName,
+                description,
+                matiereCode,
+                classe
+            };
+
+            const newMatiere = await this.groupePartageService.createMatiereWithGroupe(matiereData, classeId);
 
             res.status(201).json({
-                message: 'Matière créée avec succès',
+                message: 'Matière créée avec succès. Groupe de partage créé et étudiants inscrits automatiquement.',
                 matiere: newMatiere
             });
         } catch (error) {

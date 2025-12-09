@@ -230,17 +230,21 @@ export class DocumentController {
 
     /**
      * Récupérer tous les documents avec filtres optionnels
+     * Filtre automatiquement par les groupes de l'utilisateur authentifié
      */
     async getDocuments(req: any, res: any): Promise<void> {
         try {
-            const { categorieId, matiereId, addedById, groupePartageId } = req.query;
+            // Vérifier l'authentification
+            if (!req.user || !req.userId) {
+                return res.status(401).json({
+                    message: 'Utilisateur non authentifié',
+                    error: 'NOT_AUTHENTICATED'
+                });
+            }
 
-            const documents = await this.documentService.getAllDocuments({
-                categorieId,
-                matiereId,
-                addedById,
-                groupePartageId
-            });
+            // Récupérer uniquement les documents accessibles par l'utilisateur
+            // (basés sur ses groupes de partage)
+            const documents = await this.documentService.getDocumentsByUser(req.userId);
 
             res.status(200).json({
                 count: documents.length,

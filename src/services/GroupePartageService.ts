@@ -27,10 +27,34 @@ export class GroupePartageService {
     //     return this.groupePartageRepository.findOne({ where: { id } });
     // }
 
-    async getAllGroupePartage(): Promise<GroupePartage[]> {
-        return this.groupePartageRepository.find({
-            relations: ['users', 'documents', 'owner']
-        });
+    async getAllGroupePartage(user?: any, ownedOnly?: boolean): Promise<GroupePartage[]> {
+        const queryBuilder = this.groupePartageRepository
+            .createQueryBuilder('groupe')
+            .leftJoinAndSelect('groupe.users', 'users')
+            .leftJoinAndSelect('groupe.documents', 'documents')
+            .leftJoinAndSelect('groupe.owner', 'owner')
+            .leftJoinAndSelect('groupe.ecole', 'ecole')
+            .leftJoinAndSelect('groupe.filiere', 'filiere')
+            .leftJoinAndSelect('filiere.school', 'filiereSchool')
+            .leftJoinAndSelect('groupe.classe', 'classe')
+            .leftJoinAndSelect('classe.filiere', 'classeFiliere')
+            .leftJoinAndSelect('classeFiliere.school', 'classeFiliereSchool');
+
+        // Si ownedOnly est true et qu'un utilisateur est fourni, filtrer par propriétaire
+        if (ownedOnly && user && user.id) {
+            queryBuilder.where('groupe.ownerId = :userId', { userId: user.id });
+        }
+
+        // Filtrer par école pour les ADMIN
+        if (user && user.role === UserRole.ADMIN && user.school && user.school.id) {
+            const schoolId = user.school.id;
+            queryBuilder.andWhere(
+                '(ecole.id = :schoolId OR filiereSchool.id = :schoolId OR classeFiliereSchool.id = :schoolId OR groupe.ownerId = :userId)',
+                { schoolId, userId: user.id }
+            );
+        }
+
+        return queryBuilder.getMany();
     }
 
     /**
@@ -764,16 +788,21 @@ export class GroupePartageService {
     /**
      * Ajouter un éditeur (publisher) au groupe
      */
-    async addPublisher(groupeId: string, userId: string): Promise<void> {
+    async addPublisher(groupeId: string, userId: string, requesterId: string): Promise<void> {
         const groupe = await this.groupePartageRepository.findOne({
             where: { id: groupeId },
-            relations: ['allowedPublishers']
+            relations: ['allowedPublishers', 'owner']
         });
 
         const user = await this.userRepository.findOne({ where: { id: userId } });
 
         if (!groupe || !user) {
             throw new Error('Groupe ou utilisateur introuvable');
+        }
+
+        // Vérifier que le requester est le propriétaire du groupe
+        if (!groupe.owner || groupe.owner.id !== requesterId) {
+            throw new Error('PERMISSION_DENIED: Seul le propriétaire du groupe peut ajouter des éditeurs');
         }
 
         if (!groupe.allowedPublishers) {
@@ -1006,4 +1035,172 @@ export class GroupePartageService {
         // Supprimer la catégorie
         await this.documentCategorieRepository.remove(category);
     }
+
+    // ========== GESTION DES MATIERES ET AUTO-ENROLLMENT ==========
+
+    /**
+     * Créer une matière avec son groupe de partage
+     * Auto-enroll tous les étudiants de la classe dans le groupe
+     */
+    async createMatiereWithGroupe(matiereData: any, classeId: string): Promise<any> {
+        const MatiereRepository = AppDataSource.getRepository('Matiere' as any);
+
+        const classe = await this.classRepository.findOne({
+            where: { id: classeId },
+            relations: ['etudiants', 'filiere', 'filiere.school']
+        });
+
+        if (!classe) {
+            throw new Error('Classe non trouvée');
+        }
+
+        // Créer le groupe de partage pour la matière
+        const groupePartage = this.groupePartageRepository.create({
+            groupeName: `Matière ${matiereData.matiereName} - ${classe.className}`,
+            description: `Groupe de partage pour la matière ${matiereData.matiereName}`,
+            type: GroupePartageType.MATIERE,
+            users: []
+        });
+        await this.groupePartageRepository.save(groupePartage);
+
+        // Créer la matière avec le groupe de partage
+        const matiere = MatiereRepository.create({
+            ...matiereData,
+            classe,
+            groupePartage
+        });
+        const savedMatiere = await MatiereRepository.save(matiere) as any;
+
+        // Auto-enroll tous les étudiants de la classe dans le groupe de la matière
+        await this.enrollStudentsInMatiereGroupe(savedMatiere.id, classeId);
+
+        return savedMatiere;
+    }
+
+    /**
+     * Synchroniser le groupe de partage d'une matière
+     * Enroll tous les étudiants de la classe dans le groupe
+     */
+    async syncMatiereGroupePartage(matiereId: string): Promise<void> {
+        const MatiereRepository = AppDataSource.getRepository('Matiere' as any);
+
+        const matiere = await MatiereRepository.findOne({
+            where: { id: matiereId },
+            relations: ['groupePartage', 'groupePartage.users', 'classe', 'classe.etudiants']
+        });
+
+        if (!matiere || !matiere.groupePartage) {
+            throw new Error('Matière ou groupe de partage introuvable');
+        }
+
+        // Récupérer tous les étudiants de la classe
+        const etudiants = await this.userRepository.find({
+            where: {
+                classe: { id: matiere.classe.id },
+                role: UserRole.ETUDIANT
+            }
+        });
+
+        // Mettre à jour les membres du groupe
+        matiere.groupePartage.users = etudiants;
+        await this.groupePartageRepository.save(matiere.groupePartage);
+    }
+
+    /**
+     * Enroll tous les étudiants d'une classe dans le groupe d'une matière
+     */
+    async enrollStudentsInMatiereGroupe(matiereId: string, classeId: string): Promise<void> {
+        const MatiereRepository = AppDataSource.getRepository('Matiere' as any);
+
+        const matiere = await MatiereRepository.findOne({
+            where: { id: matiereId },
+            relations: ['groupePartage', 'groupePartage.users']
+        });
+
+        if (!matiere || !matiere.groupePartage) {
+            throw new Error('Matière ou groupe de partage introuvable');
+        }
+
+        // Récupérer tous les étudiants de la classe
+        const etudiants = await this.userRepository.find({
+            where: {
+                classe: { id: classeId },
+                role: UserRole.ETUDIANT
+            }
+        });
+
+        if (!matiere.groupePartage.users) {
+            matiere.groupePartage.users = [];
+        }
+
+        // Ajouter les étudiants au groupe (sans doublons)
+        etudiants.forEach(etudiant => {
+            if (!matiere.groupePartage.users!.some((u: User) => u.id === etudiant.id)) {
+                matiere.groupePartage.users!.push(etudiant);
+            }
+        });
+
+        await this.groupePartageRepository.save(matiere.groupePartage);
+    }
+
+    /**
+     * Enroll un étudiant dans tous les groupes de matières de sa classe
+     * Appelé quand un étudiant est ajouté à une classe
+     */
+    async enrollStudentInClassMatiereGroupes(userId: string, classeId: string): Promise<void> {
+        const MatiereRepository = AppDataSource.getRepository('Matiere' as any);
+
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) {
+            throw new Error('Utilisateur introuvable');
+        }
+
+        // Récupérer toutes les matières de la classe avec leurs groupes
+        const matieres = await MatiereRepository.find({
+            where: { classe: { id: classeId } },
+            relations: ['groupePartage', 'groupePartage.users']
+        });
+
+        // Enroll l'étudiant dans chaque groupe de matière
+        for (const matiere of matieres) {
+            if (matiere.groupePartage) {
+                if (!matiere.groupePartage.users) {
+                    matiere.groupePartage.users = [];
+                }
+
+
+                // Ajouter l'utilisateur s'il n'est pas déjà dans le groupe
+                if (!matiere.groupePartage.users.some((u: User) => u.id === userId)) {
+                    matiere.groupePartage.users.push(user);
+                    await this.groupePartageRepository.save(matiere.groupePartage);
+                }
+            }
+        }
+
+        // Synchroniser aussi le groupe de la classe
+        await this.syncClasseGroupePartage(classeId);
+    }
+
+    /**
+     * Retirer un étudiant de tous les groupes de matières de sa classe
+     * Appelé quand un étudiant est retiré d'une classe
+     */
+    async removeStudentFromClassMatiereGroupes(userId: string, classeId: string): Promise<void> {
+        const MatiereRepository = AppDataSource.getRepository('Matiere' as any);
+
+        // Récupérer toutes les matières de la classe avec leurs groupes
+        const matieres = await MatiereRepository.find({
+            where: { classe: { id: classeId } },
+            relations: ['groupePartage', 'groupePartage.users']
+        });
+
+        // Retirer l'étudiant de chaque groupe de matière
+        for (const matiere of matieres) {
+            if (matiere.groupePartage && matiere.groupePartage.users) {
+                matiere.groupePartage.users = matiere.groupePartage.users.filter((u: User) => u.id !== userId);
+                await this.groupePartageRepository.save(matiere.groupePartage);
+            }
+        }
+    }
 }
+

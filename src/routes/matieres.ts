@@ -3,6 +3,7 @@ import { MatiereController } from "../controllers/MatiereController";
 import { validateDto } from "../middleware/validateDto";
 import { CreateMatiereDto, UpdateMatiereDto } from "../dtos/matiere.dto";
 import { authMiddleware, requireAdmin } from "../middleware/auth";
+import { requireSchoolAdmin, requireOwnSchoolOnly } from "../middleware/requireSchoolAdmin";
 
 const router = Router();
 const matiereController = new MatiereController();
@@ -92,7 +93,7 @@ router.get("/:id/documents", authMiddleware, (req, res) => matiereController.get
  *       404:
  *         description: Classe non trouvée
  */
-router.post("/", authMiddleware, requireAdmin, validateDto(CreateMatiereDto), (req, res) => matiereController.createMatiere(req, res));
+router.post("/", authMiddleware, requireSchoolAdmin, validateDto(CreateMatiereDto), (req, res) => matiereController.createMatiere(req, res));
 
 /**
  * @swagger
@@ -120,7 +121,7 @@ router.post("/", authMiddleware, requireAdmin, validateDto(CreateMatiereDto), (r
  *       404:
  *         description: Matière non trouvée
  */
-router.put("/:id", authMiddleware, requireAdmin, validateDto(UpdateMatiereDto), (req, res) => matiereController.updateMatiere(req, res));
+router.put("/:id", authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('matiere'), validateDto(UpdateMatiereDto), (req, res) => matiereController.updateMatiere(req, res));
 
 /**
  * @swagger
@@ -142,6 +143,6 @@ router.put("/:id", authMiddleware, requireAdmin, validateDto(UpdateMatiereDto), 
  *       404:
  *         description: Matière non trouvée
  */
-router.delete("/:id", authMiddleware, requireAdmin, (req, res) => matiereController.deleteMatiere(req, res));
+router.delete("/:id", authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('matiere'), (req, res) => matiereController.deleteMatiere(req, res));
 
 export default router;

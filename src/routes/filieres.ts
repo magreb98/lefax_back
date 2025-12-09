@@ -3,6 +3,7 @@ import { FiliereController } from '../controllers/FiliereController';
 import { validateDto } from '../middleware/validateDto';
 import { CreateFiliereDto } from '../dtos/filiere.dto';
 import { authMiddleware, requireAdmin } from '../middleware/auth';
+import { requireSchoolAdmin, requireOwnSchoolOnly } from '../middleware/requireSchoolAdmin';
 
 const router = Router();
 const filiereController = new FiliereController();
@@ -32,7 +33,7 @@ const filiereController = new FiliereController();
  * POST /api/filieres
  * Créer une nouvelle filière
  */
-router.post('/', authMiddleware, requireAdmin, validateDto(CreateFiliereDto), (req, res) => filiereController.createFiliere(req, res));
+router.post('/', authMiddleware, requireSchoolAdmin, validateDto(CreateFiliereDto), (req, res) => filiereController.createFiliere(req, res));
 
 /**
  * GET /api/filieres
@@ -60,7 +61,7 @@ router.get('/:id', authMiddleware, (req, res) => filiereController.getFiliereByI
  * - name: string (optionnel) - Nouveau nom
  * - description: string (optionnel) - Nouvelle description
  */
-router.put('/:id', authMiddleware, requireAdmin, (req, res) => filiereController.updateFiliere(req, res));
+router.put('/:id', authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('filiere'), (req, res) => filiereController.updateFiliere(req, res));
 
 /**
  * DELETE /api/filieres/:id
@@ -68,7 +69,7 @@ router.put('/:id', authMiddleware, requireAdmin, (req, res) => filiereController
  * Params:
  * - id: string (requis) - ID de la filière
  */
-router.delete('/:id', authMiddleware, requireAdmin, (req, res) => filiereController.deleteFiliere(req, res));
+router.delete('/:id', authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('filiere'), (req, res) => filiereController.deleteFiliere(req, res));
 
 /**
  * POST /api/filieres/:id/sync-groupe
@@ -76,7 +77,7 @@ router.delete('/:id', authMiddleware, requireAdmin, (req, res) => filiereControl
  * Params:
  * - id: string (requis) - ID de la filière
  */
-router.post('/:id/sync-groupe', authMiddleware, requireAdmin, (req, res) => filiereController.syncFiliereGroupe(req, res));
+router.post('/:id/sync-groupe', authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('filiere'), (req, res) => filiereController.syncFiliereGroupe(req, res));
 
 /**
  * POST /api/filieres/groupes/:groupeId/filieres/:filiereId

@@ -12,7 +12,9 @@ export class GroupePartageController {
      */
     async getAllGroupePartage(req: Request, res: Response): Promise<void> {
         try {
-            const groupesPartages = await this.groupePartageService.getAllGroupePartage();
+            const user = (req as any).user;
+            const ownedOnly = req.query.owned === 'true';
+            const groupesPartages = await this.groupePartageService.getAllGroupePartage(user, ownedOnly);
 
             res.status(200).json({
                 message: 'Groupes de partage récupérés avec succès',
@@ -535,17 +537,17 @@ export class GroupePartageController {
                 return;
             }
 
-            const { name, description, userIds } = req.body;
+            const { groupeName, description, userIds } = req.body;
 
-            if (!name) {
+            if (!groupeName) {
                 res.status(400).json({
-                    message: 'Le champ name est requis'
+                    message: 'Le champ groupeName est requis'
                 });
                 return;
             }
 
             const groupe = await this.groupePartageService.createCustomGroupe(
-                name,
+                groupeName,
                 description || '',
                 userIds || []
             );
@@ -667,6 +669,7 @@ export class GroupePartageController {
     /**
      * Ajouter un éditeur (publisher)
      * POST /api/groupes-partage/:groupeId/publishers
+     * Réservé au propriétaire du groupe
      */
     async addPublisher(req: Request, res: Response): Promise<void> {
         try {
@@ -678,10 +681,27 @@ export class GroupePartageController {
                 return;
             }
 
-            await this.groupePartageService.addPublisher(groupeId, userId);
+            // Vérifier que l'utilisateur est authentifié
+            const requesterId = (req as any).user?.id;
+            if (!requesterId) {
+                res.status(401).json({ message: 'Authentification requise' });
+                return;
+            }
+
+            await this.groupePartageService.addPublisher(groupeId, userId, requesterId);
             res.status(200).json({ message: 'Éditeur ajouté avec succès' });
         } catch (error: any) {
             console.error('Erreur ajout éditeur:', error);
+
+            // Gérer les erreurs de permission
+            if (error.message.includes('PERMISSION_DENIED')) {
+                res.status(403).json({
+                    message: 'Permission refusée',
+                    error: 'Seul le propriétaire du groupe peut ajouter des éditeurs'
+                });
+                return;
+            }
+
             res.status(400).json({ message: error.message });
         }
     }
@@ -804,6 +824,13 @@ export class GroupePartageController {
             res.status(201).json(category);
         } catch (error: any) {
             console.error('Erreur création catégorie:', error);
+            if (error.message.includes('PERMISSION_DENIED')) {
+                res.status(403).json({
+                    message: 'Permission refusée',
+                    error: error.message
+                });
+                return;
+            }
             res.status(400).json({ message: error.message });
         }
     }
@@ -846,6 +873,106 @@ export class GroupePartageController {
             res.status(200).json({ message: 'Catégorie supprimée avec succès' });
         } catch (error: any) {
             console.error('Erreur suppression catégorie:', error);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Mettre à jour le rôle d'un membre dans le groupe
+     * PUT /api/groupes-partage/:groupeId/members/:userId/role
+     */
+    async updateMemberRole(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId, userId } = req.params;
+            const { role } = req.body;
+            const requester = (req as any).user;
+
+            /*
+             * RÈGLES DE GESTION DES RÔLES :
+             * 1. SUPERADMIN : Peut tout faire partout.
+             * 2. SCHOOL ADMIN : Peut gérer les rôles UNIQUEMENT pour les groupes de SON école.
+             * 3. AUTRES : Interdit.
+             */
+
+            // Vérification SUPERADMIN
+            if (requester.role === 'superadmin') {
+                // OK, proceed
+            }
+            // Vérification ADMIN (School Admin)
+            else if (requester.role === 'admin') {
+                // Doit avoir une école
+                if (!requester.school || !requester.school.id) {
+                    res.status(403).json({
+                        message: 'Vous devez être associé à une école pour gérer les rôles',
+                        error: 'NO_SCHOOL_ASSIGNED'
+                    });
+                    return;
+                }
+
+                // Vérifier que le groupe appartient à son école
+                const groupe = await this.groupePartageService.getGroupeById(groupeId);
+                let belongsToSchool = false;
+
+                // Cas 1: Groupe lié directement à l'école
+                if (groupe.ecole?.id === requester.school.id) belongsToSchool = true;
+
+                // Cas 2: Groupe lié à une filière de l'école
+                if (groupe.filiere?.school?.id === requester.school.id) belongsToSchool = true;
+
+                // Cas 3: Groupe lié à une classe de l'école
+                if (groupe.classe?.filiere?.school?.id === requester.school.id) belongsToSchool = true;
+
+                // Cas 4: Groupe lié à une matière de l'école
+                if (groupe.matiere?.classe?.filiere?.school?.id === requester.school.id) belongsToSchool = true;
+
+                if (!belongsToSchool) {
+                    res.status(403).json({
+                        message: 'Vous ne pouvez gérer les rôles que pour les groupes de votre école',
+                        error: 'NOT_YOUR_SCHOOL_GROUP'
+                    });
+                    return;
+                }
+            }
+            // Autres rôles
+            else {
+                res.status(403).json({
+                    message: 'Permission refusée. Seuls les administrateurs peuvent gérer les rôles.',
+                    error: 'PERMISSION_DENIED'
+                });
+                return;
+            }
+
+            // Ici, on appellerait le service pour mettre à jour le rôle (logique métier)
+            // Pour l'instant, on suppose que le service a une méthode pour ça ou on implémente direct ici si simple
+            // Comme ce n'était pas explicite dans le service actuel, on va simuler ou ajouter si besoin.
+            // Le ticket demande "gérer les rôles", on va supposer qu'il s'agit de changer le status ou privilège dans le groupe.
+            // MAIS GroupePartage.users est ManyToMany, il n'y a pas de "rôle dans le groupe" stocké dans la table de liaison standard TypeORM 
+            // sauf si une entité de jointure explicite existe.
+            // Vérifions l'entité GroupePartage... elle a 'users' et 'allowedPublishers'.
+            // Si "gérer les rôles" signifie "donner la permission de publier", c'est addPublisher/removePublisher.
+
+            // SI la demande concerne User.role (le rôle global de l'utilisateur), c'est différent.
+            // Relisons la demande : "Dans la liste des membres d’un groupe, seul le superadmin peut gérer les rôles de tous les utilisateurs."
+            // Cela semble parler du rôle GLOBAL de l'utilisateur (Admin, Enseignant, Etudiant) vu depuis le contexte du groupe.
+
+            // Si c'est le cas, on appelle userService.updateUser via une méthode dédiée ou existante.
+            // ATTENTION: Un Admin d'école ne doit pas pouvoir promouvoir qqn superadmin.
+
+            // Security Check sur le rôle cible
+            if (role === 'superadmin' && requester.role !== 'superadmin') {
+                res.status(403).json({ message: 'Vous ne pouvez pas promouvoir un utilisateur en SuperAdmin' });
+                return;
+            }
+
+            // Update user role logic
+            const UserService = require('../services/Userservice').UserService;
+            const userService = new UserService();
+            await userService.updateUser(userId, { role });
+
+            res.status(200).json({ message: 'Rôle mis à jour avec succès' });
+
+        } catch (error: any) {
+            console.error('Erreur mise à jour rôle:', error);
             res.status(400).json({ message: error.message });
         }
     }

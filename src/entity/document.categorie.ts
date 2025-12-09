@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn, ManyToOne, JoinColumn } from "typeorm";
 import { Document } from "./document";
 import { GroupePartage } from "./groupe.partage";
+import { User } from "./user";
 
 @Entity()
 export class DocumentCategorie {
@@ -40,4 +41,9 @@ export class DocumentCategorie {
     @OneToMany(() => Document, document => document.categorie)
     @ApiProperty({ description: 'List of documents in the category' })
     documents!: Document[];
+
+    @ManyToOne(() => User, { nullable: true })
+    @JoinColumn({ name: 'created_by_id' })
+    @ApiProperty({ description: 'User who created the category' })
+    createdBy?: User;
 }

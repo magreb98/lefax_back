@@ -3,6 +3,7 @@ import { ClasseController } from '../controllers/ClasseController';
 import { validateDto } from '../middleware/validateDto';
 import { CreateClasseDto } from '../dtos/classe.dto';
 import { authMiddleware, requireAdmin, requireTeacher } from '../middleware/auth';
+import { requireSchoolAdmin, requireOwnSchoolOnly } from '../middleware/requireSchoolAdmin';
 
 const router = Router();
 const classeController = new ClasseController();
@@ -32,7 +33,7 @@ const classeController = new ClasseController();
  * POST /api/classes
  * Créer une nouvelle classe
  */
-router.post('/', authMiddleware, requireAdmin, validateDto(CreateClasseDto), (req, res) => classeController.createClasse(req, res));
+router.post('/', authMiddleware, requireSchoolAdmin, validateDto(CreateClasseDto), (req, res) => classeController.createClasse(req, res));
 
 /**
  * GET /api/classes
@@ -60,7 +61,7 @@ router.get('/:id', authMiddleware, (req, res) => classeController.getClasseById(
  * - name: string (optionnel) - Nouveau nom de la classe
  * - filiereId: string (optionnel) - Nouvelle filière
  */
-router.put('/:id', authMiddleware, requireAdmin, (req, res) => classeController.updateClasse(req, res));
+router.put('/:id', authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('classe'), (req, res) => classeController.updateClasse(req, res));
 
 /**
  * DELETE /api/classes/:id
@@ -68,7 +69,7 @@ router.put('/:id', authMiddleware, requireAdmin, (req, res) => classeController.
  * Params:
  * - id: string (requis) - ID de la classe
  */
-router.delete('/:id', authMiddleware, requireAdmin, (req, res) => classeController.deleteClasse(req, res));
+router.delete('/:id', authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('classe'), (req, res) => classeController.deleteClasse(req, res));
 
 /**
  * POST /api/classes/:id/sync-groupe
@@ -76,7 +77,7 @@ router.delete('/:id', authMiddleware, requireAdmin, (req, res) => classeControll
  * Params:
  * - id: string (requis) - ID de la classe
  */
-router.post('/:id/sync-groupe', authMiddleware, requireAdmin, (req, res) => classeController.syncClasseGroupe(req, res));
+router.post('/:id/sync-groupe', authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('classe'), (req, res) => classeController.syncClasseGroupe(req, res));
 
 /**
  * GET /api/classes/:id/students

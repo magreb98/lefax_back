@@ -4,6 +4,7 @@ import { Class } from "../entity/classe";
 import { Filiere } from "../entity/filiere";
 import { GroupePartageService } from "../services/GroupePartageService";
 import { formatErrorResponse } from "../util/helper";
+import { UserRole } from "../entity/user";
 
 export class ClasseController {
     private classeRepository = AppDataSource.getRepository(Class);
@@ -14,11 +15,17 @@ export class ClasseController {
     async createClasse(req: any, res: any): Promise<void> {
         try {
             const { className, filiereId } = req.body;
+            const user = (req as any).user;
 
             if (!className || !filiereId) {
                 return res.status(400).json({
                     message: 'Les champs className et filiereId sont requis'
                 });
+            }
+
+            // Vérifier que l'utilisateur est authentifié
+            if (!user) {
+                return res.status(401).json({ message: 'Utilisateur non authentifié' });
             }
 
             // Vérifier que la filière existe
@@ -29,6 +36,24 @@ export class ClasseController {
 
             if (!filiere) {
                 return res.status(404).json({ message: 'Filière non trouvée' });
+            }
+
+            // Vérifier que l'admin a une école et qu'elle correspond
+            if (user.role === UserRole.ADMIN) {
+                if (!user.school || !user.school.id) {
+                    return res.status(403).json({
+                        message: 'Vous devez être associé à une école pour créer une classe',
+                        error: 'NO_SCHOOL_ASSIGNED'
+                    });
+                }
+
+                const filiereSchoolId = filiere.school?.id;
+                if (!filiereSchoolId || filiereSchoolId !== user.school.id) {
+                    return res.status(403).json({
+                        message: 'Cette filière n\'appartient pas à votre école',
+                        error: 'NOT_YOUR_SCHOOL'
+                    });
+                }
             }
 
             // Créer la classe avec son groupe de partage
@@ -197,8 +222,8 @@ export class ClasseController {
             });
 
             if (!classe) {
-             res.status(404).json({ message: 'Classe non trouvée' });
-             return;
+                res.status(404).json({ message: 'Classe non trouvée' });
+                return;
             }
 
             res.status(200).json({
@@ -325,7 +350,7 @@ export class ClasseController {
             }
 
             if (!user.classe || user.classe.id !== classeId) {
-                 res.status(400).json({
+                res.status(400).json({
                     message: 'L\'utilisateur n\'est pas étudiant de cette classe'
                 });
                 return;
