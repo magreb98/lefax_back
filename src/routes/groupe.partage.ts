@@ -221,13 +221,4 @@ router.delete('/:groupeId/categories/:categoryId',
     (req, res) => groupePartageController.deleteGroupCategory(req, res)
 );
 
-/**
- * PUT /api/groupes-partage/:groupeId/members/:userId/role
- * Mettre à jour le rôle d'un membre (Règles strictes SuperAdmin/SchoolAdmin)
- */
-router.put('/:groupeId/members/:userId/role',
-    authMiddleware,
-    (req, res) => groupePartageController.updateMemberRole(req, res)
-);
-
 export default router;

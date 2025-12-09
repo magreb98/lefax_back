@@ -231,14 +231,8 @@ export class UserService {
             user.school = classe.filiere.school;
         }
 
-
         await this.userRepository.save(user);
-
-        // Synchroniser le groupe de la classe
         await this.groupePartageService.syncClasseGroupePartage(classeId);
-
-        // Auto-enroll dans les groupes des matières de la classe
-        await this.groupePartageService.enrollStudentInClassMatiereGroupes(userId, classeId);
 
         return user;
     }
@@ -262,12 +256,8 @@ export class UserService {
 
         await this.userRepository.save(user);
 
-
         if (classeId) {
             await this.groupePartageService.syncClasseGroupePartage(classeId);
-
-            // Retirer l'étudiant des groupes des matières de l'ancienne classe
-            await this.groupePartageService.removeStudentFromClassMatiereGroupes(userId, classeId);
         }
 
         return user;
@@ -518,14 +508,8 @@ export class UserService {
             users.push(user);
         }
 
-
         // Synchroniser le groupe de partage une seule fois après avoir ajouté tous les utilisateurs
         await this.groupePartageService.syncClasseGroupePartage(classeId);
-
-        // Auto-enroll tous les utilisateurs dans les groupes des matières de la classe
-        for (const user of users) {
-            await this.groupePartageService.enrollStudentInClassMatiereGroupes(user.id, classeId);
-        }
 
         return users;
     }
@@ -601,11 +585,8 @@ export class UserService {
         await this.userRepository.save(student);
 
         // Synchroniser le groupe de la classe si n�cessaire
-        // Synchroniser le groupe de la classe si nécessaire
         if (classeId) {
             await this.groupePartageService.syncClasseGroupePartage(classeId);
-            // Retirer l'étudiant des groupes des matières de l'ancienne classe
-            await this.groupePartageService.removeStudentFromClassMatiereGroupes(studentId, classeId);
         }
 
         return student;
