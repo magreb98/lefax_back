@@ -45,7 +45,7 @@ export class Ecole {
     @ApiProperty({ description: 'Last update timestamp' })
     updatedAt!: Date;
 
-    @OneToOne(() => GroupePartage, { cascade: true })
+    @OneToOne(() => GroupePartage, groupePartage => groupePartage.ecole, { cascade: true })
     @JoinColumn({ name: 'groupe_partage_id' })
     @ApiProperty({ description: 'Group sharing associated with the school' })
     groupePartage!: GroupePartage;

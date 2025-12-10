@@ -2,32 +2,68 @@ import { Request, Response } from 'express';
 import { GroupePartageService } from '../services/GroupePartageService';
 import { GroupePartageType, GroupePartage } from '../entity/groupe.partage';
 import { AppDataSource } from '../config/database';
+import { User } from '../entity/user';
 
 export class GroupePartageController {
     private groupePartageService = new GroupePartageService();
+    private userRepository = AppDataSource.getRepository(User);
 
 
     /**
      * Récupérer tous les groupes de partages
      */
     async getAllGroupePartage(req: Request, res: Response): Promise<void> {
-        try {
-            const user = (req as any).user;
-            const ownedOnly = req.query.owned === 'true';
-            const groupesPartages = await this.groupePartageService.getAllGroupePartage(user, ownedOnly);
-
-            res.status(200).json({
-                message: 'Groupes de partage récupérés avec succès',
-                groupesPartages
-            });
-        } catch (error: any) {
-            console.error('Erreur lors de la récupération des groupes de partage:', error);
-            res.status(400).json({
-                message: 'Erreur lors de la récupération des groupes de partage',
-                error: error.message
-            });
+        console.log('getAllGroupePartage called');
+    try {
+        // ✅ Charger l'utilisateur avec ses relations nécessaires
+        let user = (req as any).user;
+        
+        // Log pour debug
+        console.log('User from req:', user);
+        console.log('Query params:', req.query);
+        
+        if (user && user.id) {
+            try {
+                // Recharger l'utilisateur avec la relation school et classe
+                const fullUser = await this.userRepository.findOne({
+                    where: { id: user.id },
+                    relations: ['school', 'classe']
+                });
+                
+                if (fullUser) {
+                    user = fullUser;
+                    console.log('User reloaded with relations:', {
+                        id: user.id,
+                        role: user.role,
+                        hasSchool: !!user.school,
+                        schoolId: user.school?.id
+                    });
+                }
+            } catch (reloadError) {
+                console.error('Erreur rechargement user:', reloadError);
+                // Continue avec user original si échec
+            }
         }
+
+        const ownedOnly = req.query.owned === 'true';
+        console.log('Calling service with ownedOnly:', ownedOnly);
+        
+        const groupesPartages = await this.groupePartageService.getAllGroupePartage(user, ownedOnly);
+
+        res.status(200).json({
+            message: 'Groupes de partage récupérés avec succès',
+            groupesPartages
+        });
+    } catch (error: any) {
+        console.error('Erreur complète:', error);
+        console.error('Stack trace:', error.stack);
+        res.status(400).json({
+            message: 'Erreur lors de la récupération des groupes de partage',
+            error: error.message,
+            details: error.stack
+        });
     }
+}
 
     /**
      * Récupérer un groupe de partage par son ID avec tous ses détails

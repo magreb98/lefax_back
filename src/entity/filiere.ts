@@ -23,7 +23,7 @@ export class Filiere {
     updatedAt!: Date;
 
     // Relation OneToOne avec GroupePartage (une filière = un groupe de partage)
-    @OneToOne(() => GroupePartage, { cascade: true })
+    @OneToOne(() => GroupePartage, groupePartage => groupePartage.filiere, { cascade: true })
     @JoinColumn({ name: 'groupe_partage_id' })
     groupePartage!: GroupePartage;
 

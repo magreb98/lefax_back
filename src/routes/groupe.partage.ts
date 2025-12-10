@@ -8,81 +8,50 @@ const router = Router();
 const groupePartageController = new GroupePartageController();
 
 /**
- * @swagger
- * /api/groupes-partage/custom/create:
- *   post:
- *     tags:
- *       - Groupes de Partage
- *     summary: Créer un groupe personnalisé
- *     description: Permet de créer un groupe personnalisé. L'utilisateur connecté devient le propriétaire.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *               description:
- *                 type: string
- *     responses:
- *       201:
- *         description: Groupe créé avec succès
- *       400:
- *         description: Données invalides
- */
-
-/**
- * GET /api/groupes-partage/all
+ * GET /api/groupes
  * Récupérer tous les groupes de partage
+ * ✅ CORRECTION: Déplacer cette route AVANT les routes avec paramètres
  */
 router.get('/',
     authMiddleware,
-    groupePartageController.getAllGroupePartage.bind(groupePartageController)
+    (req, res) => {
+        console.log('✅ Route / appelée');
+        console.log('Query:', req.query);
+        return groupePartageController.getAllGroupePartage(req, res);
+    }
 );
 
 /**
- * GET /api/groupes/:id
- * Récupérer un groupe de partage par son ID
- */
-router.get('/:id',
-    authMiddleware,
-    groupePartageController.getGroupeById.bind(groupePartageController)
-);
-
-/**
- * POST /api/groupes-partage/custom/create
+ * POST /api/groupes/custom/create
  * Créer un groupe personnalisé (authentification requise)
- * L'utilisateur connecté est automatiquement le propriétaire
  */
 router.post('/custom/create',
-    authMiddleware,  // ✨ Authentification requise
+    authMiddleware,
     (req, res) => groupePartageController.createCustomGroupe(req, res)
 );
 
 /**
- * POST /api/groupes-partage/ecole/create
+ * POST /api/groupes/ecole/create
  * Créer une école avec son groupe (admin uniquement)
  */
 router.post('/ecole/create',
     authMiddleware,
-    requireAdmin,  // ✨ Admin uniquement
+    requireAdmin,
     (req, res) => groupePartageController.createEcoleWithGroupe(req, res)
 );
 
 /**
- * POST /api/groupes-partage/filiere/create
+ * POST /api/groupes/filiere/create
  * Créer une filière avec son groupe (admin uniquement)
  */
-router.post('/groupes-partage/filiere/create',
+router.post('/filiere/create',
     authMiddleware,
     requireAdmin,
     (req, res) => groupePartageController.createFiliereWithGroupe(req, res)
 );
 
 /**
- * POST /api/groupes-partage/classe/create
+ * POST /api/groupes/classe/create
  * Créer une classe avec son groupe (admin ou enseignant)
  */
 router.post('/classe/create',
@@ -92,7 +61,7 @@ router.post('/classe/create',
 );
 
 /**
- * POST /api/groupes-partage/user/add
+ * POST /api/groupes/user/add
  * Ajouter un utilisateur à un groupe (authentification requise)
  */
 router.post('/user/add',
@@ -101,7 +70,16 @@ router.post('/user/add',
 );
 
 /**
- * GET /api/groupes-partage/enseignant/:enseignantId/groupes
+ * POST /api/groupes/join
+ * Rejoindre un groupe via invitation
+ */
+router.post('/join',
+    authMiddleware,
+    (req, res) => groupePartageController.joinByInvitation(req, res)
+);
+
+/**
+ * GET /api/groupes/enseignant/:enseignantId/groupes
  * Récupérer les groupes d'un enseignant (authentification requise)
  */
 router.get('/enseignant/:enseignantId/groupes',
@@ -109,10 +87,23 @@ router.get('/enseignant/:enseignantId/groupes',
     (req, res) => groupePartageController.getEnseignantGroupes(req, res)
 );
 
+/**
+ * GET /api/groupes/:id
+ * Récupérer un groupe de partage par son ID
+ * ⚠️ IMPORTANT: Cette route doit être APRÈS toutes les routes spécifiques
+ */
+router.get('/:id',
+    authMiddleware,
+    (req, res) => {
+        console.log('✅ Route /:id appelée avec id:', req.params.id);
+        return groupePartageController.getGroupeById(req, res);
+    }
+);
+
 // ========== GESTION AVANCÉE ==========
 
 /**
- * POST /api/groupes-partage/:groupeId/members
+ * POST /api/groupes/:groupeId/members
  * Ajouter un membre à un groupe
  */
 router.post('/:groupeId/members',
@@ -122,7 +113,7 @@ router.post('/:groupeId/members',
 );
 
 /**
- * DELETE /api/groupes-partage/:groupeId/members/:userId
+ * DELETE /api/groupes/:groupeId/members/:userId
  * Retirer un membre d'un groupe
  */
 router.delete('/:groupeId/members/:userId',
@@ -132,7 +123,7 @@ router.delete('/:groupeId/members/:userId',
 );
 
 /**
- * POST /api/groupes-partage/:groupeId/publishers
+ * POST /api/groupes/:groupeId/publishers
  * Ajouter un publisher (éditeur) à un groupe
  */
 router.post('/:groupeId/publishers',
@@ -142,7 +133,7 @@ router.post('/:groupeId/publishers',
 );
 
 /**
- * POST /api/groupes-partage/:groupeId/invitation
+ * POST /api/groupes/:groupeId/invitation
  * Générer un lien d'invitation pour un groupe
  */
 router.post('/:groupeId/invitation',
@@ -152,16 +143,7 @@ router.post('/:groupeId/invitation',
 );
 
 /**
- * POST /api/groupes-partage/join
- * Rejoindre un groupe via invitation
- */
-router.post('/join',
-    authMiddleware,
-    (req, res) => groupePartageController.joinByInvitation(req, res)
-);
-
-/**
- * POST /api/groupes-partage/:groupeId/documents
+ * POST /api/groupes/:groupeId/documents
  * Ajouter un document à un groupe
  */
 router.post('/:groupeId/documents',
@@ -171,7 +153,7 @@ router.post('/:groupeId/documents',
 );
 
 /**
- * DELETE /api/groupes-partage/:groupeId/documents/:documentId
+ * DELETE /api/groupes/:groupeId/documents/:documentId
  * Retirer un document d'un groupe
  */
 router.delete('/:groupeId/documents/:documentId',
@@ -183,7 +165,7 @@ router.delete('/:groupeId/documents/:documentId',
 // ========== GESTION DES CATÉGORIES ==========
 
 /**
- * GET /api/groupes-partage/:groupeId/categories
+ * GET /api/groupes/:groupeId/categories
  * Récupérer les catégories d'un groupe
  */
 router.get('/:groupeId/categories',
@@ -192,17 +174,16 @@ router.get('/:groupeId/categories',
 );
 
 /**
- * POST /api/groupes-partage/:groupeId/categories
+ * POST /api/groupes/:groupeId/categories
  * Créer une catégorie pour un groupe
  */
 router.post('/:groupeId/categories',
     authMiddleware,
-    // requireGroupAdmin removed to allow public group access checks in service
     (req, res) => groupePartageController.createGroupCategory(req, res)
 );
 
 /**
- * PUT /api/groupes-partage/:groupeId/categories/:categoryId
+ * PUT /api/groupes/:groupeId/categories/:categoryId
  * Mettre à jour une catégorie
  */
 router.put('/:groupeId/categories/:categoryId',
@@ -212,7 +193,7 @@ router.put('/:groupeId/categories/:categoryId',
 );
 
 /**
- * DELETE /api/groupes-partage/:groupeId/categories/:categoryId
+ * DELETE /api/groupes/:groupeId/categories/:categoryId
  * Supprimer une catégorie
  */
 router.delete('/:groupeId/categories/:categoryId',

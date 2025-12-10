@@ -30,7 +30,7 @@ export class Matiere {
     classe!: Class;
 
     // Sous-groupe de partage par matière (nouveau)
-    @OneToOne(() => GroupePartage, { cascade: true, nullable: true })
+    @OneToOne(() => GroupePartage, groupePartage => groupePartage.matiere, { cascade: true, nullable: true })
     @JoinColumn({ name: 'groupe_partage_id' })
     @ApiProperty({ description: 'Groupe partage associated with this matiere for document organization' })
     groupePartage?: GroupePartage;

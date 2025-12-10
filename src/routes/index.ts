@@ -9,20 +9,14 @@ import classeRoutes from './classes';
 import groupeRoutes from './groupe.partage';
 import notificationRoutes from './notifications';
 import matiereRoutes from './matieres';
+
 const router = Router();
 
-/**
- * @swagger
- * /api:
- *   get:
- *     tags:
- *       - Index
- *     summary: Point d'entrée de l'API
- *     description: Retourne les informations générales sur l'API et les routes disponibles.
- *     responses:
- *       200:
- *         description: Informations sur l'API récupérées avec succès
- */
+// ✅ Middleware de debug pour TOUTES les requêtes
+router.use((req, res, next) => {
+    console.log(`📍 [${req.method}] ${req.path} - Query:`, req.query);
+    next();
+});
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
@@ -31,7 +25,13 @@ router.use('/documents', documentRoutes);
 router.use('/ecoles', ecoleRoutes);
 router.use('/filieres', filiereRoutes);
 router.use('/classes', classeRoutes);
-router.use('/groupes', groupeRoutes);
+
+// ✅ Log spécifique pour les groupes
+router.use('/groupes', (req, res, next) => {
+    console.log('🔵 GROUPE ROUTE HIT:', req.method, req.url, 'Query:', req.query);
+    next();
+}, groupeRoutes);
+
 router.use('/notifications', notificationRoutes);
 router.use('/matieres', matiereRoutes);
 
