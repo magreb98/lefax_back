@@ -102,6 +102,11 @@ export class GroupePartage {
     @Column({ default: true })
     @ApiProperty({ description: 'Indicates if the groupe partage is active' })
     isActive!: boolean;
+    
+        // Indique si le groupe est public (visible par tous)
+        @Column({ default: false })
+        @ApiProperty({ description: 'Indique si le groupe est public' })
+        isPublic!: boolean;
 
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     @ApiProperty({ description: 'Creation timestamp' })

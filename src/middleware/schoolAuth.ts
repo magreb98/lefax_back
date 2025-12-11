@@ -136,7 +136,7 @@ export const autoFilterBySchool = (req: AuthRequest, res: Response, next: NextFu
     }
 
     // Si l'utilisateur est ADMIN et a une école, filtrer automatiquement
-    if (req.user.role === UserRole.ADMIN && req.user.school) {
+    if ((req.user.role === UserRole.ADMIN || (req.user.role as string) === 'admin') && req.user.school) {
         // Force le filtrage par l'école de l'admin
         req.query.schoolId = req.user.school.id;
     }

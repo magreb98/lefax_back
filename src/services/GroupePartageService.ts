@@ -31,9 +31,13 @@ export class GroupePartageService {
     async getAllGroupePartage(user?: any, ownedOnly?: boolean): Promise<GroupePartage[]> {
         console.log('Using NEW implementation of getAllGroupePartage');
 
-        // Sécurité : si pas d'utilisateur, liste vide
+
+        // Récupère le groupe public (nom 'public')
+        const publicGroup = await this.groupePartageRepository.findOne({ where: { groupeName: 'public' }, relations: ['users', 'documents', 'owner', 'ecole', 'filiere', 'classe'] });
+
+        // Sécurité : si pas d'utilisateur, retourne seulement le groupe public
         if (!user || !user.id) {
-            return [];
+            return publicGroup ? [publicGroup] : [];
         }
 
         const userId = user.id;
@@ -52,41 +56,61 @@ export class GroupePartageService {
 
 
         // 2. CAS : ownedOnly = true (Mes groupes)
-        // C'est le cas simple qui posait problème. On filtre uniquement sur l'ID du propriétaire.
         if (ownedOnly) {
-            // Note: on utilise 'owner.id' qui fait référence à la table jointe User, c'est plus sûr
             qb.where('owner.id = :userId', { userId });
-            return await qb.getMany();
+            const ownedGroups = await qb.getMany();
+            // Ajoute le groupe public si non déjà inclus
+            if (publicGroup && !ownedGroups.some(g => g.id === publicGroup.id)) {
+                ownedGroups.unshift(publicGroup);
+            }
+            return ownedGroups;
         }
 
         // 3. CAS : ownedOnly = false (Tous les groupes visibles pour cet utilisateur)
 
         // A. SUPERADMIN : voit tout
-        if (user.role === UserRole.SUPERADMIN) {
-            return await qb.getMany();
+        if (user.role === UserRole.SUPERADMIN || user.role === 'superadmin') {
+            const allGroups = await qb.getMany();
+            if (publicGroup && !allGroups.some(g => g.id === publicGroup.id)) {
+                allGroups.unshift(publicGroup);
+            }
+            return allGroups;
         }
 
-        // B. ADMIN : voit son école + ses groupes
-        if (user.role === UserRole.ADMIN) {
+        // B. ADMIN : voit ses écoles (qu'il administre) + ses groupes + son école d'appartenance (si défini)
+        if (user.role === UserRole.ADMIN || user.role === 'admin') {
+            let schoolIds: string[] = [];
+
+            // 1. Ecoles administrées (relation OneToMany 'ecoles' sur User)
+            if (user.ecoles && user.ecoles.length > 0) {
+                schoolIds.push(...user.ecoles.map((e: Ecole) => e.id));
+            }
+
+            // 2. Ecole d'appartenance (relation ManyToOne 'school' sur User - cas hybride ou legacy)
             if (user.school && user.school.id) {
-                const schoolId = user.school.id;
+                schoolIds.push(user.school.id);
+            }
+
+            // Dédoublonnage des IDs
+            schoolIds = [...new Set(schoolIds)];
+
+            if (schoolIds.length > 0) {
                 qb.where(
                     new Brackets((qb: any) => {
-                        // Groupes liés directement à l'école
-                        qb.where('ecole.id = :schoolId', { schoolId })
-                            // Groupes liés à une filière de l'école
-                            .orWhere('filiereSchool.id = :schoolId', { schoolId })
-                            // Groupes liés à une classe de l'école
-                            .orWhere('classeFiliereSchool.id = :schoolId', { schoolId })
-                            // Groupes personnels
+                        qb.where('ecole.id IN (:...schoolIds)', { schoolIds })
+                            .orWhere('filiereSchool.id IN (:...schoolIds)', { schoolIds })
+                            .orWhere('classeFiliereSchool.id IN (:...schoolIds)', { schoolIds })
                             .orWhere('owner.id = :userId', { userId });
                     })
                 );
             } else {
-                // Admin sans école : voit seulement ses groupes
                 qb.where('owner.id = :userId', { userId });
             }
-            return await qb.getMany();
+            const adminGroups = await qb.getMany();
+            if (publicGroup && !adminGroups.some(g => g.id === publicGroup.id)) {
+                adminGroups.unshift(publicGroup);
+            }
+            return adminGroups;
         }
 
         // C. AUTRES (Enseignant, Etudiant, User) : voit ses groupes + groupes où il est membre
@@ -97,7 +121,11 @@ export class GroupePartageService {
             })
         );
 
-        return await qb.getMany();
+        const userGroups = await qb.getMany();
+        if (publicGroup && !userGroups.some(g => g.id === publicGroup.id)) {
+            userGroups.unshift(publicGroup);
+        }
+        return userGroups;
     }
 
     /**

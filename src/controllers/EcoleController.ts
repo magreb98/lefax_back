@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AppDataSource } from "../config/database";
 import { Ecole } from "../entity/ecole";
+import { UserRole } from "../entity/user";
 import { GroupePartageService } from "../services/GroupePartageService";
 import { formatErrorResponse } from "../util/helper";
 
@@ -42,7 +43,25 @@ export class EcoleController {
     // Récupérer toutes les écoles
     async getEcoles(req: any, res: any): Promise<void> {
         try {
+            const user = req.user;
+            console.log('getEcoles debug:', {
+                userExists: !!user,
+                userId: user?.id,
+                userRole: user?.role,
+                UserRoleEnum: UserRole
+            });
+
+            let where: any = {};
+
+            // Si l'utilisateur est un ADMIN, il ne voit que les écoles qu'il administre
+            // Use string comparison 'admin' to avoid potential cyclic dependency issues with UserRole enum
+            if (user && (user.role === UserRole.ADMIN || (user.role as string) === 'admin')) {
+                console.log('Filtering schools for Admin:', user.id);
+                where = { schoolAdmin: { id: user.id } };
+            }
+
             const ecoles = await this.ecoleRepository.find({
+                where,
                 relations: ['groupePartage', 'groupePartage.users', 'filieres', 'filieres.classes', 'students'],
                 order: { createdAt: 'DESC' }
             });

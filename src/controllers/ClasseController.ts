@@ -93,6 +93,14 @@ export class ClasseController {
                 .leftJoinAndSelect('classe.matieres', 'matieres')
                 .orderBy('classe.createdAt', 'DESC');
 
+            // Si l'utilisateur est un ADMIN, il ne voit que les classes de ses écoles
+            const user = req.user;
+            if (user && (user.role === UserRole.ADMIN || user.role === 'admin')) {
+                // On s'assure que l'école de la filière est gérée par cet admin
+                // school est l'alias pour filiere.school
+                queryBuilder.innerJoin('school.schoolAdmin', 'admin', 'admin.id = :adminId', { adminId: user.id });
+            }
+
             // Filtrer par filière si spécifié
             if (filiereId) {
                 queryBuilder.andWhere('filiere.id = :filiereId', { filiereId });

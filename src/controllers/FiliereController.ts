@@ -74,7 +74,16 @@ export class FiliereController {
     // Récupérer toutes les filières
     async getFilieres(req: any, res: any): Promise<void> {
         try {
+            const user = req.user;
+            let where: any = {};
+
+            // Si l'utilisateur est un ADMIN, il ne voit que les filières de ses écoles
+            if (user && (user.role === UserRole.ADMIN || user.role === 'admin')) {
+                where = { school: { schoolAdmin: { id: user.id } } };
+            }
+
             const filieres = await this.filiereRepository.find({
+                where,
                 relations: ['groupePartage', 'groupePartage.users', 'school', 'classes'],
                 order: { createdAt: 'DESC' }
             });

@@ -28,6 +28,19 @@ export class MatiereController {
                 .leftJoinAndSelect('matiere.enseignementAssignments', 'enseignementAssignments')
                 .orderBy('matiere.createdAt', 'DESC');
 
+            // JOINS nécessaires pour vérifier l'école de la classe -> filière -> école
+            // On fait des leftJoin (sans select si on veut pas polluer le résultat, ou avec select si utile)
+            // Ici le filtrage suffit.
+            queryBuilder.leftJoin('classe.filiere', 'filiere')
+                .leftJoin('filiere.school', 'school');
+
+
+            // Si l'utilisateur est un ADMIN, il ne voit que les matières des classes de ses écoles
+            const user = (req as any).user;
+            if (user && (user.role === UserRole.ADMIN || user.role === 'admin')) {
+                queryBuilder.innerJoin('school.schoolAdmin', 'admin', 'admin.id = :adminId', { adminId: user.id });
+            }
+
             // Filtrer par classe si spécifié
             if (classeId) {
                 queryBuilder.andWhere('classe.id = :classeId', { classeId });
