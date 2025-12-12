@@ -295,7 +295,7 @@ export class UserService {
     async getAllTeachers(): Promise<User[]> {
         return await this.userRepository.find({
             where: { role: UserRole.ENSEIGNANT },
-            relations: ['enseignements', 'enseignements.ecole', 'enseignements.classe', 'enseignements.matiere']
+            relations: ['school', 'enseignements', 'enseignements.ecole', 'enseignements.classe', 'enseignements.matiere']
         });
     }
 
