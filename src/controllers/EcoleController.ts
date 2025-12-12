@@ -11,6 +11,7 @@ export class EcoleController {
 
     // Créer une école avec son groupe de partage
     async createEcole(req: any, res: any): Promise<void> {
+        console.log('requete de creqtion du school0, ', req.body)
         try {
             const { schoolName, address, schoolEmail, schoolPhone, schoolAdmin } = req.body;
 
