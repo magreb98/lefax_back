@@ -616,16 +616,16 @@ export class UserController {
    */
   async addTeacherToSchool(req: Request, res: Response): Promise<void> {
     try {
-      const { userId, schoolId } = req.body;
+      const { email, schoolId } = req.body;
 
-      if (!userId || !schoolId) {
+      if (!email || !schoolId) {
         res.status(400).json({
-          message: 'Les champs userId et schoolId sont requis'
+          message: 'Les champs email et schoolId sont requis'
         });
         return;
       }
 
-      const teacher = await this.userService.addTeacherToSchool(userId, schoolId);
+      const teacher = await this.userService.addTeacherToSchool(email, schoolId);
 
       res.status(200).json({
         message: 'Enseignant ajouté à l\'école avec succès',
@@ -640,6 +640,40 @@ export class UserController {
       console.error('Erreur lors de l\'ajout de l\'enseignant:', error);
       res.status(400).json({
         message: error.message || 'Erreur lors de l\'ajout de l\'enseignant'
+      });
+    }
+  }
+
+  /**
+   * Assigner des matières à un enseignant
+   */
+  async assignMatieresToTeacher(req: Request, res: Response): Promise<void> {
+    try {
+      const { email, matiereIds } = req.body;
+
+      if (!email || !matiereIds || !Array.isArray(matiereIds)) {
+        res.status(400).json({
+          message: 'L\'email et une liste d\'IDs de matières sont requis'
+        });
+        return;
+      }
+
+      if (matiereIds.length === 0) {
+        res.status(400).json({
+          message: 'La liste des matières ne peut pas être vide'
+        });
+        return;
+      }
+
+      await this.userService.assignMatieresToTeacher(email, matiereIds);
+
+      res.status(200).json({
+        message: `${matiereIds.length} matière(s) assignée(s) à l'enseignant avec succès`
+      });
+    } catch (error: any) {
+      console.error('Erreur lors de l\'assignation des matières:', error);
+      res.status(400).json({
+        message: error.message || 'Erreur lors de l\'assignation des matières'
       });
     }
   }

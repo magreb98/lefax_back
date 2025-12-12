@@ -39,7 +39,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     const userRepository = AppDataSource.getRepository(User);
     const user = await userRepository.findOne({
       where: { id: decoded.userId },
-      relations: ['school', 'classe', 'groupesPartage', 'enseignements']
+      relations: ['school', 'classe', 'groupesPartage', 'enseignements', 'ecoles']
     });
 
     // Vérifier l'existence de l'utilisateur

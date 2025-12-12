@@ -99,6 +99,11 @@ export class ClasseController {
                 // On s'assure que l'école de la filière est gérée par cet admin
                 // school est l'alias pour filiere.school
                 queryBuilder.innerJoin('school.schoolAdmin', 'admin', 'admin.id = :adminId', { adminId: user.id });
+
+            } else if (user && (user.role === UserRole.ENSEIGNANT || user.role === 'enseignant')) {
+                // Si l'utilisateur est un ENSEIGNANT, il ne voit que les classes où il enseigne
+                queryBuilder.innerJoin('classe.enseignementAssignments', 'enseignement')
+                    .where('enseignement.enseignant_id = :teacherId', { teacherId: user.id });
             }
 
             // Filtrer par filière si spécifié

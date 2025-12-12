@@ -200,6 +200,19 @@ export class GroupePartageService {
 
         // Mettre à jour le groupe de partage
         classe.groupePartage.users = allUsers;
+
+        // Mise à jour des allowedPublishers pour la classe (Enseignants)
+        if (!classe.groupePartage.allowedPublishers) {
+            classe.groupePartage.allowedPublishers = [];
+        }
+        const currentPublishers = classe.groupePartage.allowedPublishers || [];
+        enseignants.forEach(enseignant => {
+            if (!currentPublishers.some((p: User) => p.id === enseignant.id)) {
+                currentPublishers.push(enseignant);
+            }
+        });
+        classe.groupePartage.allowedPublishers = currentPublishers;
+
         await this.groupePartageRepository.save(classe.groupePartage);
     }
 
@@ -313,7 +326,7 @@ export class GroupePartageService {
     async syncAfterEnseignementAssignment(enseignementId: string): Promise<void> {
         const enseignement = await this.enseignementRepository.findOne({
             where: { id: enseignementId },
-            relations: ['ecole', 'classe', 'enseignant']
+            relations: ['ecole', 'classe', 'enseignant', 'matiere']
         });
 
         if (!enseignement) {
@@ -325,6 +338,11 @@ export class GroupePartageService {
 
         // Synchroniser le groupe de la classe
         await this.syncClasseGroupePartage(enseignement.classe.id);
+
+        // Synchroniser le groupe de la matière (Nouveau)
+        if (enseignement.matiere) {
+            await this.syncMatiereGroupePartage(enseignement.matiere.id);
+        }
     }
 
     /**
@@ -351,12 +369,38 @@ export class GroupePartageService {
         });
         await this.groupePartageRepository.save(groupePartage);
 
+        // Récupérer l'utilisateur admin si fourni (ID ou objet)
+        let schoolAdminUser: User | null = null;
+        if (ecoleData.schoolAdmin) {
+            // Si c'est un objet User avec ID
+            if (typeof ecoleData.schoolAdmin === 'object' && 'id' in ecoleData.schoolAdmin) {
+                schoolAdminUser = await this.userRepository.findOne({ where: { id: (ecoleData.schoolAdmin as User).id } });
+            }
+            // Si c'est une string ID
+            else if (typeof ecoleData.schoolAdmin === 'string') {
+                schoolAdminUser = await this.userRepository.findOne({ where: { id: ecoleData.schoolAdmin } });
+            }
+        }
+
         // Créer l'école avec le groupe de partage
         const ecole = this.ecoleRepository.create({
             ...ecoleData,
+            schoolAdmin: schoolAdminUser || undefined, // Assurer que c'est l'objet User
             groupePartage
         });
         await this.ecoleRepository.save(ecole);
+
+        // IMPORTANT: Mettre à jour l'utilisateur pour l'associer à l'école
+        // Cela permet aux contrôles de permission (user.school) de fonctionner immédiatement
+        if (schoolAdminUser) {
+            schoolAdminUser.school = ecole;
+            // On s'assure aussi qu'il a le droit de créer des écoles s'il est admin
+            // (Optionnel mais cohérent)
+            await this.userRepository.save(schoolAdminUser);
+
+            // Mettre à jour l'objet ecole retourné avec le bon admin
+            ecole.schoolAdmin = schoolAdminUser;
+        }
 
         return ecole;
     }
@@ -1142,8 +1186,12 @@ export class GroupePartageService {
         });
         const savedMatiere = await MatiereRepository.save(matiere) as any;
 
-        // Auto-enroll tous les étudiants de la classe dans le groupe de la matière
-        await this.enrollStudentsInMatiereGroupe(savedMatiere.id, classeId);
+        // Mise à jour bi-directionnelle : associer la matière au groupe
+        groupePartage.matiere = savedMatiere;
+        await this.groupePartageRepository.save(groupePartage);
+
+        // Synchroniser le groupe (étudiants + enseignants)
+        await this.syncMatiereGroupePartage(savedMatiere.id);
 
         return savedMatiere;
     }
@@ -1151,6 +1199,11 @@ export class GroupePartageService {
     /**
      * Synchroniser le groupe de partage d'une matière
      * Enroll tous les étudiants de la classe dans le groupe
+     */
+    /**
+     * Synchroniser le groupe de partage d'une matière
+     * Enroll tous les étudiants de la classe et les enseignants affectés
+     * Donne les droits de publication aux enseignants
      */
     async syncMatiereGroupePartage(matiereId: string): Promise<void> {
         const MatiereRepository = AppDataSource.getRepository('Matiere' as any);
@@ -1164,7 +1217,7 @@ export class GroupePartageService {
             throw new Error('Matière ou groupe de partage introuvable');
         }
 
-        // Récupérer tous les étudiants de la classe
+        // 1. Récupérer tous les étudiants de la classe
         const etudiants = await this.userRepository.find({
             where: {
                 classe: { id: matiere.classe.id },
@@ -1172,8 +1225,40 @@ export class GroupePartageService {
             }
         });
 
-        // Mettre à jour les membres du groupe
-        matiere.groupePartage.users = etudiants;
+        // 2. Récupérer tous les enseignants affectés à cette matière
+        const enseignements = await this.enseignementRepository.find({
+            where: {
+                matiere: { id: matiereId },
+                isActive: true
+            },
+            relations: ['enseignant']
+        });
+        const enseignants = enseignements.map(e => e.enseignant);
+
+        // 3. Mettre à jour les membres du groupe (Etudiants + Enseignants)
+        const allUsers = [...etudiants];
+        enseignants.forEach(enseignant => {
+            if (!allUsers.some(u => u.id === enseignant.id)) {
+                allUsers.push(enseignant);
+            }
+        });
+        matiere.groupePartage.users = allUsers;
+
+        // 4. Mettre à jour les allowedPublishers (Enseignants uniquement)
+        if (!matiere.groupePartage.allowedPublishers) {
+            matiere.groupePartage.allowedPublishers = [];
+        }
+        // On remplace ou on ajoute ? Pour l'instant on réinitialise avec les enseignants actuels
+        // (On peut vouloir garder des publishers ajoutés manuellement, mais ici c'est une synchro "système")
+        // Pour être safe : on ajoute les enseignants s'ils n'y sont pas.
+        const currentPublishers = matiere.groupePartage.allowedPublishers || [];
+        enseignants.forEach(enseignant => {
+            if (!currentPublishers.some((p: User) => p.id === enseignant.id)) {
+                currentPublishers.push(enseignant);
+            }
+        });
+        matiere.groupePartage.allowedPublishers = currentPublishers;
+
         await this.groupePartageRepository.save(matiere.groupePartage);
     }
 

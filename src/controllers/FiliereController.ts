@@ -14,12 +14,25 @@ export class FiliereController {
     // Créer une filière avec son groupe de partage
     async createFiliere(req: any, res: any): Promise<void> {
         try {
-            const { name, description, ecoleId } = req.body;
+            let { name, description, ecoleId } = req.body;
             const user = (req as any).user;
+
+            // Si ecoleId n'est pas fourni, essayer de le déduire du contexte utilisateur
+            if (!ecoleId && user) {
+                if (user.school?.id) {
+                    ecoleId = user.school.id;
+                } else if (user.ecoles && user.ecoles.length > 0) {
+                    ecoleId = user.ecoles[0].id;
+                }
+            }
 
             if (!name || !ecoleId) {
                 return res.status(400).json({
-                    message: 'Les champs name et ecoleId sont requis'
+                    message: 'Les champs name et ecoleId sont requis (ecoleId peut être déduit du contexte utilisateur)',
+                    details: {
+                        name: name ? 'Présent' : 'Manquant',
+                        ecoleId: ecoleId ? 'Présent' : 'Manquant (Impossible de déduire du contexte utilisateur)'
+                    }
                 });
             }
 
@@ -36,14 +49,24 @@ export class FiliereController {
 
             // Vérifier que l'admin a une école et qu'elle correspond
             if (user.role === UserRole.ADMIN) {
-                if (!user.school || !user.school.id) {
+                // Vérifier si l'admin a une école (soit directement, soit via ecoles)
+                let userSchoolId: string | null = null;
+
+                if (user.school?.id) {
+                    userSchoolId = user.school.id;
+                } else if (user.ecoles && user.ecoles.length > 0) {
+                    // Si l'admin gère des écoles, utiliser la première
+                    userSchoolId = user.ecoles[0].id;
+                }
+
+                if (!userSchoolId) {
                     return res.status(403).json({
                         message: 'Vous devez être associé à une école pour créer une filière',
                         error: 'NO_SCHOOL_ASSIGNED'
                     });
                 }
 
-                if (ecoleId !== user.school.id) {
+                if (ecoleId !== userSchoolId) {
                     return res.status(403).json({
                         message: 'Vous ne pouvez créer une filière que dans votre propre école',
                         error: 'NOT_YOUR_SCHOOL'

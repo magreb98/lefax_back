@@ -33,13 +33,22 @@ export const requireSchoolAdmin = (req: AuthRequest, res: Response, next: NextFu
         });
     }
 
-    // Vérifier que l'ADMIN a une école assignée
-    if (!req.user.school || !req.user.school.id) {
+    // Vérifier que l'ADMIN a une école assignée (soit directement, soit via ecoles)
+    const hasSchool = req.user.school?.id || (req.user.ecoles && req.user.ecoles.length > 0);
+
+    if (!hasSchool) {
         return res.status(403).json({
             message: 'Vous devez être associé à une école pour effectuer cette action.',
             error: 'NO_SCHOOL_ASSIGNED',
             hint: 'Veuillez créer ou être assigné à une école d\'abord'
         });
+    }
+
+    // Attacher l'ID de l'école au user pour les contrôles ultérieurs
+    // Priorité: school direct > première école gérée
+    if (!req.user.school?.id && req.user.ecoles && req.user.ecoles.length > 0) {
+        // @ts-ignore - On enrichit dynamiquement le user pour les contrôleurs ultérieurs
+        req.user.school = req.user.ecoles[0];
     }
 
     next();

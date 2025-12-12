@@ -39,6 +39,10 @@ export class MatiereController {
             const user = (req as any).user;
             if (user && (user.role === UserRole.ADMIN || user.role === 'admin')) {
                 queryBuilder.innerJoin('school.schoolAdmin', 'admin', 'admin.id = :adminId', { adminId: user.id });
+
+            } else if (user && (user.role === UserRole.ENSEIGNANT || user.role === 'enseignant')) {
+                queryBuilder.innerJoin('matiere.enseignementAssignments', 'assignment')
+                    .where('assignment.enseignant_id = :teacherId', { teacherId: user.id });
             }
 
             // Filtrer par classe si spécifié

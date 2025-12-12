@@ -17,7 +17,8 @@ export class AuthController {
       }
 
       const user = await this.userRepository.findOne({
-        where: { email, isActive: true }
+        where: { email, isActive: true },
+        relations: ['school', 'classe', 'ecoles']
       });
 
       console.log('Login attempt for email:', email);
@@ -40,6 +41,12 @@ export class AuthController {
         { expiresIn: jwtExpiresIn } as SignOptions
       );
 
+      // Si l'admin n'a pas de school définie mais gère une école, on utilise cette école
+      let userSchool = user.school;
+      if (!userSchool && user.ecoles && user.ecoles.length > 0) {
+        userSchool = user.ecoles[0];
+      }
+
       // Retourner le token et les informations utilisateur (sans le mot de passe)
       const userResponse = {
         id: user.id,
@@ -49,7 +56,9 @@ export class AuthController {
         email: user.email,
         role: user.role,
         phone: user.phoneNumber,
-        isActive: user.isActive
+        isActive: user.isActive,
+        school: userSchool,
+        classe: user.classe
       };
 
       return res.json({
@@ -63,7 +72,7 @@ export class AuthController {
 
   async logout(req: Request, res: Response) {
     try {
-    
+
       return res.json({ message: 'Déconnexion réussie' });
     } catch (error) {
       return res.status(500).json({ message: 'Erreur lors de la déconnexion', error });
@@ -76,6 +85,7 @@ export class AuthController {
 
       const user = await this.userRepository.findOne({
         where: { id: userId },
+        relations: ['school', 'classe', 'ecoles'],
         select: ['id', 'firstName', 'lastName', 'email', 'role', 'phoneNumber', 'isActive', 'createdAt']
       });
 
@@ -83,10 +93,17 @@ export class AuthController {
         return res.status(404).json({ message: 'Utilisateur non trouvé' });
       }
 
+      // Si l'admin n'a pas de school définie mais gère une école, on utilise cette école
+      let userSchool = user.school;
+      if (!userSchool && user.ecoles && user.ecoles.length > 0) {
+        userSchool = user.ecoles[0];
+      }
+
       // Retourner l'utilisateur avec le nom complet
       const userResponse = {
         ...user,
-        name: `${user.firstName} ${user.lastName}`
+        name: `${user.firstName} ${user.lastName}`,
+        school: userSchool
       };
 
       return res.json(userResponse);

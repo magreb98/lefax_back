@@ -28,6 +28,7 @@ const swaggerSpec = swaggerJsdoc(swaggerOptions);
 // Helmet pour sécuriser les headers HTTP
 app.use(
   helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],

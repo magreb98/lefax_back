@@ -8,6 +8,7 @@ export class CreateFiliereDto {
     @IsString()
     description?: string;
 
+    @IsOptional()
     @IsString()
-    ecoleId!: string;
+    ecoleId?: string;
 }

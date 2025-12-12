@@ -142,7 +142,7 @@ export class UserService {
     async getUserById(id: string): Promise<User | null> {
         return await this.userRepository.findOne({
             where: { id },
-            relations: ['school', 'classe', 'groupesPartage', 'enseignements', 'ecoles']
+            relations: ['school', 'classe', 'groupesPartage', 'enseignements', 'enseignements.matiere', 'enseignements.classe', 'ecoles']
         });
     }
 
@@ -608,9 +608,9 @@ export class UserService {
     /**
      * Ajouter un enseignant � une �cole
      */
-    async addTeacherToSchool(userId: string, schoolId: string): Promise<User> {
+    async addTeacherToSchool(email: string, schoolId: string): Promise<User> {
         const user = await this.userRepository.findOne({
-            where: { id: userId },
+            where: { email: email },
             relations: ['school']
         });
 
@@ -652,6 +652,60 @@ export class UserService {
         user.role = UserRole.USER;
 
         return await this.userRepository.save(user);
+    }
+
+    /**
+     * Assigner des matières à un enseignant
+     * Crée les entrées EnseignementAssignment et synchronise les permissons
+     */
+    async assignMatieresToTeacher(email: string, matiereIds: string[]): Promise<void> {
+        const user = await this.userRepository.findOne({
+            where: { email },
+            relations: ['school'] // Besoin de l'école pour vérifier/créer l'assignment
+        });
+
+        if (!user) throw new Error('Enseignant introuvable');
+        if (user.role !== UserRole.ENSEIGNANT) throw new Error('Utilisateur n\'est pas un enseignant');
+        if (!user.school) throw new Error('Enseignant non associé à une école');
+
+        const EnseignementRepository = AppDataSource.getRepository('EnseignementAssignment' as any);
+        const MatiereRepository = AppDataSource.getRepository('Matiere' as any);
+
+        for (const matiereId of matiereIds) {
+            const matiere = await MatiereRepository.findOne({
+                where: { id: matiereId },
+                relations: ['classe']
+            });
+
+            if (!matiere) {
+                console.warn(`Matière ${matiereId} introuvable, ignorée`);
+                continue;
+            }
+
+            // Vérifier si l'assignation existe déjà
+            const existingAssignment = await EnseignementRepository.findOne({
+                where: {
+                    enseignant: { id: user.id },
+                    matiere: { id: matiereId },
+                    isActive: true
+                }
+            });
+
+            if (!existingAssignment) {
+                // Créer l'assignation
+                const assignment = EnseignementRepository.create({
+                    enseignant: user,
+                    ecole: user.school,
+                    classe: matiere.classe,
+                    matiere: matiere,
+                    isActive: true
+                });
+                const savedAssignment = await EnseignementRepository.save(assignment);
+
+                // Synchroniser les permissions (Groupes Matière, Classe, École)
+                await this.groupePartageService.syncAfterEnseignementAssignment(savedAssignment.id);
+            }
+        }
     }
 
     /**

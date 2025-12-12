@@ -165,6 +165,12 @@ router.get('/school/:schoolId/teachers', authMiddleware, requireAdmin, (req, res
  * Ajouter un enseignant à une école (ADMIN only)
  */
 router.post('/teachers/add-to-school', authMiddleware, requireAdmin, (req, res) => userController.addTeacherToSchool(req, res));
+
+/**
+ * POST /api/users/teachers/assign-matieres
+ * Assigner des matières à un enseignant (ADMIN only)
+ */
+router.post('/teachers/assign-matieres', authMiddleware, requireAdmin, (req, res) => userController.assignMatieresToTeacher(req, res));
 /**
  * POST /api/users/teachers/remove-from-school
  * Retirer un enseignant d'une école (ADMIN only)
