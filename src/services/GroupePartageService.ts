@@ -52,7 +52,8 @@ export class GroupePartageService {
             .leftJoinAndSelect('filiere.school', 'filiereSchool')
             .leftJoinAndSelect('groupe.classe', 'classe')
             .leftJoinAndSelect('classe.filiere', 'classeFiliere')
-            .leftJoinAndSelect('classeFiliere.school', 'classeFiliereSchool');
+            .leftJoinAndSelect('classeFiliere.school', 'classeFiliereSchool')
+            .leftJoinAndSelect('groupe.matiere', 'matiere');
 
 
         // 2. CAS : ownedOnly = true (Mes groupes)
