@@ -125,6 +125,11 @@ export const requirePublisherOrAdmin = async (req: AuthRequest, res: Response, n
             return next();
         }
 
+        // TOUT LE MONDE peut publier dans le groupe "public"
+        if (groupe.groupeName === 'public') {
+            return next();
+        }
+
         // Vérifier si l'utilisateur est le propriétaire
         if (groupe.owner && groupe.owner.id === req.user.id) {
             return next();
@@ -190,6 +195,11 @@ export const canUserPublishToGroup = async (
 
         // SUPERADMIN peut publier partout
         if (user.role === UserRole.SUPERADMIN) {
+            return { canPublish: true };
+        }
+
+        // TOUT LE MONDE peut publier dans le groupe "public"
+        if (groupe.groupeName === 'public') {
             return { canPublish: true };
         }
 

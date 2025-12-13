@@ -53,7 +53,10 @@ export class GroupePartageService {
             .leftJoinAndSelect('groupe.classe', 'classe')
             .leftJoinAndSelect('classe.filiere', 'classeFiliere')
             .leftJoinAndSelect('classeFiliere.school', 'classeFiliereSchool')
-            .leftJoinAndSelect('groupe.matiere', 'matiere');
+            .leftJoinAndSelect('groupe.matiere', 'matiere')
+            .leftJoinAndSelect('matiere.classe', 'matiereClasse')
+            .leftJoinAndSelect('matiereClasse.filiere', 'matiereFiliere')
+            .leftJoinAndSelect('matiereFiliere.school', 'matiereSchool');
 
 
         // 2. CAS : ownedOnly = true (Mes groupes)
@@ -101,6 +104,7 @@ export class GroupePartageService {
                         qb.where('ecole.id IN (:...schoolIds)', { schoolIds })
                             .orWhere('filiereSchool.id IN (:...schoolIds)', { schoolIds })
                             .orWhere('classeFiliereSchool.id IN (:...schoolIds)', { schoolIds })
+                            .orWhere('matiereSchool.id IN (:...schoolIds)', { schoolIds })
                             .orWhere('owner.id = :userId', { userId });
                     })
                 );
@@ -361,49 +365,63 @@ export class GroupePartageService {
      * Créer une école avec son groupe de partage
      */
     async createEcoleWithGroupe(ecoleData: Partial<Ecole>): Promise<Ecole> {
+        console.log('START createEcoleWithGroupe', ecoleData);
         // Créer le groupe de partage
-        const groupePartage = this.groupePartageRepository.create({
-            groupeName: `Groupe ${ecoleData.schoolName}`,
-            description: `Groupe de partage de l'école ${ecoleData.schoolName}`,
-            type: GroupePartageType.SCHOOL,
-            users: []
-        });
-        await this.groupePartageRepository.save(groupePartage);
+        try {
+            const groupePartage = this.groupePartageRepository.create({
+                groupeName: `Groupe ${ecoleData.schoolName}`,
+                description: `Groupe de partage de l'école ${ecoleData.schoolName}`,
+                type: GroupePartageType.SCHOOL,
+                users: []
+            });
+            console.log('Saving group...');
+            await this.groupePartageRepository.save(groupePartage);
+            console.log('Group saved:', groupePartage.id);
 
-        // Récupérer l'utilisateur admin si fourni (ID ou objet)
-        let schoolAdminUser: User | null = null;
-        if (ecoleData.schoolAdmin) {
-            // Si c'est un objet User avec ID
-            if (typeof ecoleData.schoolAdmin === 'object' && 'id' in ecoleData.schoolAdmin) {
-                schoolAdminUser = await this.userRepository.findOne({ where: { id: (ecoleData.schoolAdmin as User).id } });
+            // Récupérer l'utilisateur admin si fourni (ID ou objet)
+            let schoolAdminUser: User | null = null;
+            if (ecoleData.schoolAdmin) {
+                console.log('Processing school admin...');
+                // Si c'est un objet User avec ID
+                if (typeof ecoleData.schoolAdmin === 'object' && 'id' in ecoleData.schoolAdmin) {
+                    schoolAdminUser = await this.userRepository.findOne({ where: { id: (ecoleData.schoolAdmin as User).id } });
+                }
+                // Si c'est une string ID
+                else if (typeof ecoleData.schoolAdmin === 'string') {
+                    schoolAdminUser = await this.userRepository.findOne({ where: { id: ecoleData.schoolAdmin } });
+                }
+                console.log('School admin found:', schoolAdminUser?.id);
             }
-            // Si c'est une string ID
-            else if (typeof ecoleData.schoolAdmin === 'string') {
-                schoolAdminUser = await this.userRepository.findOne({ where: { id: ecoleData.schoolAdmin } });
+
+            // Créer l'école avec le groupe de partage
+            console.log('Creating school entity...');
+            const ecole = this.ecoleRepository.create({
+                ...ecoleData,
+                schoolAdmin: schoolAdminUser || undefined, // Assurer que c'est l'objet User
+                groupePartage
+            });
+            console.log('Saving school entity...');
+            await this.ecoleRepository.save(ecole);
+            console.log('School saved:', ecole.id);
+
+            // IMPORTANT: Mettre à jour l'utilisateur pour l'associer à l'école
+            // Cela permet aux contrôles de permission (user.school) de fonctionner immédiatement
+            if (schoolAdminUser) {
+                console.log('Updating admin user school...');
+                schoolAdminUser.school = ecole;
+                // On s'assure aussi qu'il a le droit de créer des écoles s'il est admin
+                // (Optionnel mais cohérent)
+                await this.userRepository.save(schoolAdminUser);
+
+                // Mettre à jour l'objet ecole retourné avec le bon admin
+                ecole.schoolAdmin = schoolAdminUser;
             }
+
+            return ecole;
+        } catch (e) {
+            console.error('ERROR in createEcoleWithGroupe:', e);
+            throw e;
         }
-
-        // Créer l'école avec le groupe de partage
-        const ecole = this.ecoleRepository.create({
-            ...ecoleData,
-            schoolAdmin: schoolAdminUser || undefined, // Assurer que c'est l'objet User
-            groupePartage
-        });
-        await this.ecoleRepository.save(ecole);
-
-        // IMPORTANT: Mettre à jour l'utilisateur pour l'associer à l'école
-        // Cela permet aux contrôles de permission (user.school) de fonctionner immédiatement
-        if (schoolAdminUser) {
-            schoolAdminUser.school = ecole;
-            // On s'assure aussi qu'il a le droit de créer des écoles s'il est admin
-            // (Optionnel mais cohérent)
-            await this.userRepository.save(schoolAdminUser);
-
-            // Mettre à jour l'objet ecole retourné avec le bon admin
-            ecole.schoolAdmin = schoolAdminUser;
-        }
-
-        return ecole;
     }
 
     /**

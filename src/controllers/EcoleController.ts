@@ -31,9 +31,20 @@ export class EcoleController {
                 schoolAdmin
             });
 
+            // Sanitize response to avoid circular dependency
+            const sanitizedEcole = {
+                ...ecole,
+                schoolAdmin: ecole.schoolAdmin ? {
+                    id: ecole.schoolAdmin.id,
+                    firstName: ecole.schoolAdmin.firstName,
+                    lastName: ecole.schoolAdmin.lastName,
+                    email: ecole.schoolAdmin.email
+                } : null
+            };
+
             res.status(201).json({
                 message: 'École créée avec succès',
-                ecole
+                ecole: sanitizedEcole
             });
         } catch (error) {
             console.error('Erreur lors de la création de l\'école:', error);

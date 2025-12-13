@@ -34,11 +34,31 @@ export class PaginationHelper {
      * Extraire les paramètres de pagination depuis la requête
      */
     static getParams(query: any, maxLimit?: number): { skip: number; take: number; page: number } {
-        const page = Math.max(1, parseInt(query.page) || this.DEFAULT_PAGE);
-        const limit = Math.min(
-            maxLimit || this.MAX_LIMIT,
-            Math.max(1, parseInt(query.limit) || this.DEFAULT_LIMIT)
-        );
+        // Ensure query is an object
+        const q = query || {};
+
+        // Safely parse page
+        let page = 1;
+        if (q.page) {
+            const parsed = parseInt(String(q.page), 10);
+            if (!isNaN(parsed) && parsed > 0) {
+                page = parsed;
+            }
+        }
+
+        // Safely parse limit
+        let limit = this.DEFAULT_LIMIT;
+        if (q.limit) {
+            const parsed = parseInt(String(q.limit), 10);
+            if (!isNaN(parsed) && parsed > 0) {
+                limit = parsed;
+            }
+        }
+
+        // Apply max limit
+        const actualMaxLimit = maxLimit || this.MAX_LIMIT;
+        limit = Math.min(actualMaxLimit, limit);
+
         const skip = (page - 1) * limit;
 
         return { skip, take: limit, page };

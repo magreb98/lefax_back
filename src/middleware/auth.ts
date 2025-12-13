@@ -70,6 +70,21 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     req.user = user;
     req.userId = user.id;
 
+    // Vérifier si le rôle a changé par rapport au token
+    if (decoded.role !== user.role) {
+      const jwtSecret = process.env.JWT_SECRET || 'your-secret-key-un-peu-plus-secure-comme-ca';
+      const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '24h';
+
+      const newToken = jwt.sign(
+        { userId: user.id, role: user.role },
+        jwtSecret,
+        { expiresIn: jwtExpiresIn } as jwt.SignOptions
+      );
+
+      // Envoyer le nouveau token dans le header
+      res.setHeader('x-refresh-token', newToken);
+    }
+
     next();
   } catch (error: any) {
     console.error('Erreur d\'authentification:', error);
