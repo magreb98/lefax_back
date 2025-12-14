@@ -37,7 +37,7 @@ export class User {
     @Column({ default: false })
     isSuspended!: boolean;
 
-    @Column({nullable: true})
+    @Column({ nullable: true })
     isDelegate?: boolean;
 
     @Column({
@@ -59,6 +59,12 @@ export class User {
 
     @Column({ default: false })
     canViewAllGroups!: boolean;
+
+    @Column({ nullable: true })
+    resetPasswordToken?: string;
+
+    @Column({ nullable: true, type: 'timestamp' })
+    resetPasswordExpires?: Date;
 
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     createdAt!: Date;
