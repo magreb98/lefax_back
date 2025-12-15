@@ -66,7 +66,7 @@ export class UserService {
         await this.addUserToPublicGroup(user.id);
 
         if (data.classeId) {
-            await this.groupePartageService.syncClasseGroupePartage(data.classeId);
+            await this.groupePartageService.enrollUserInClassHierarchy(user.id, data.classeId);
         }
 
         return user;
@@ -232,7 +232,9 @@ export class UserService {
         }
 
         await this.userRepository.save(user);
-        await this.groupePartageService.syncClasseGroupePartage(classeId);
+        await this.userRepository.save(user);
+        // await this.groupePartageService.syncClasseGroupePartage(classeId);
+        await this.groupePartageService.enrollUserInClassHierarchy(userId, classeId);
 
         return user;
     }
@@ -509,7 +511,13 @@ export class UserService {
         }
 
         // Synchroniser le groupe de partage une seule fois après avoir ajouté tous les utilisateurs
-        await this.groupePartageService.syncClasseGroupePartage(classeId);
+        // Synchroniser le groupe de partage une seule fois après avoir ajouté tous les utilisateurs
+        // await this.groupePartageService.syncClasseGroupePartage(classeId);
+
+        // Pour chaque utilisateur, on l'ajoute à toute la hiérarchie
+        for (const user of users) {
+            await this.groupePartageService.enrollUserInClassHierarchy(user.id, classeId);
+        }
 
         return users;
     }

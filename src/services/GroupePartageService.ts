@@ -150,8 +150,15 @@ export class GroupePartageService {
                 'allowedPublishers',
                 'ecole',
                 'filiere',
+                'filiere.school',
                 'classe',
-                'matiere'
+                'classe.filiere',
+                'classe.filiere.school',
+                'matiere',
+                'matiere.classe',
+                'matiere.classe.filiere',
+                'matiere.classe.filiere.school',
+                'owner.school'
             ]
         });
 
@@ -925,7 +932,13 @@ export class GroupePartageService {
     async addPublisher(groupeId: string, userId: string, requesterId: string): Promise<void> {
         const groupe = await this.groupePartageRepository.findOne({
             where: { id: groupeId },
-            relations: ['allowedPublishers', 'owner']
+            relations: [
+                'allowedPublishers', 'owner',
+                'ecole',
+                'filiere', 'filiere.school',
+                'classe', 'classe.filiere', 'classe.filiere.school',
+                'matiere', 'matiere.classe', 'matiere.classe.filiere', 'matiere.classe.filiere.school'
+            ]
         });
 
         const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -934,9 +947,52 @@ export class GroupePartageService {
             throw new Error('Groupe ou utilisateur introuvable');
         }
 
-        // Vérifier que le requester est le propriétaire du groupe
-        if (!groupe.owner || groupe.owner.id !== requesterId) {
-            throw new Error('PERMISSION_DENIED: Seul le propriétaire du groupe peut ajouter des éditeurs');
+        // Vérifier les permissions : Owner ou Admin de l'école
+        let canParams = false;
+
+        // 1. Owner
+        if (groupe.owner && groupe.owner.id === requesterId) {
+            canParams = true;
+        }
+
+        // 2. School Admin (Need to fetch requester full object)
+        if (!canParams) {
+            const requester = await this.userRepository.findOne({
+                where: { id: requesterId },
+                relations: ['school', 'ecoles']
+            });
+
+            if (requester) {
+                // Check if requester is SUPERADMIN
+                if (requester.role === UserRole.SUPERADMIN) {
+                    canParams = true;
+                }
+                // Check if requester is ADMIN of the group's school
+                else if (requester.role === UserRole.ADMIN) {
+                    // Need to find group's school ID
+                    let groupSchoolId: string | undefined;
+
+                    // Direct school group
+                    if (groupe.ecole) groupSchoolId = groupe.ecole.id;
+                    // Filiere group
+                    else if (groupe.filiere && groupe.filiere.school) groupSchoolId = groupe.filiere.school.id;
+                    // Class group
+                    else if (groupe.classe && groupe.classe.filiere && groupe.classe.filiere.school) groupSchoolId = groupe.classe.filiere.school.id;
+                    // Matiere group
+                    else if (groupe.matiere && groupe.matiere.classe && groupe.matiere.classe.filiere && groupe.matiere.classe.filiere.school) groupSchoolId = groupe.matiere.classe.filiere.school.id;
+
+                    if (groupSchoolId) {
+                        // Check if requester administers this school OR belongs to it as admin
+                        const isSchoolAdmin = (requester.ecoles && requester.ecoles.some(e => e.id === groupSchoolId)) ||
+                            (requester.school && requester.school.id === groupSchoolId);
+                        if (isSchoolAdmin) canParams = true;
+                    }
+                }
+            }
+        }
+
+        if (!canParams) {
+            throw new Error('PERMISSION_DENIED: Vous n\'avez pas les droits pour modifier ce groupe');
         }
 
         if (!groupe.allowedPublishers) {
@@ -977,7 +1033,7 @@ export class GroupePartageService {
     async joinByInvitation(token: string, userId: string): Promise<GroupePartage> {
         const groupe = await this.groupePartageRepository.findOne({
             where: { invitationToken: token },
-            relations: ['users']
+            relations: ['users', 'classe']
         });
 
         if (!groupe) {
@@ -1000,6 +1056,11 @@ export class GroupePartageService {
         if (!groupe.users.some(u => u.id === userId)) {
             groupe.users.push(user);
             await this.groupePartageRepository.save(groupe);
+        }
+
+        // Si le groupe est un groupe de CLASSE, on lance la synchronisation complète de la hiérarchie
+        if (groupe.type === GroupePartageType.CLASS && groupe.classe) {
+            await this.enrollUserInClassHierarchy(user.id, groupe.classe.id);
         }
 
         return groupe;
@@ -1375,6 +1436,69 @@ export class GroupePartageService {
                 matiere.groupePartage.users = matiere.groupePartage.users.filter((u: User) => u.id !== userId);
                 await this.groupePartageRepository.save(matiere.groupePartage);
             }
+        }
+    }
+
+    /**
+     * Enroll un utilisateur dans toute la hiérarchie de la classe
+     * (Groupe Classe + Groupes Matières + Groupe Filière + Groupe École)
+     */
+    async enrollUserInClassHierarchy(userId: string, classeId: string): Promise<void> {
+        console.log(`[SYNC] Starting enrollUserInClassHierarchy for user ${userId} in class ${classeId}`);
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) {
+            console.error(`[SYNC] User ${userId} not found`);
+            throw new Error('Utilisateur non trouvé');
+        }
+
+        const classe = await this.classRepository.findOne({
+            where: { id: classeId },
+            relations: ['groupePartage', 'filiere', 'filiere.groupePartage', 'filiere.school', 'filiere.school.groupePartage']
+        });
+        if (!classe) {
+            console.error(`[SYNC] Class ${classeId} not found`);
+            throw new Error('Classe non trouvée');
+        }
+
+        console.log(`[SYNC] Class found: ${classe.className}, Filiere: ${classe.filiere?.name}, School: ${classe.filiere?.school?.schoolName}`);
+
+        // 1. Groupe de la CLASSE
+        if (classe.groupePartage) {
+            console.log(`[SYNC] Adding to Class Group: ${classe.groupePartage.id}`);
+            await this.addUserToCustomGroupe(userId, classe.groupePartage.id);
+        } else {
+            console.warn(`[SYNC] Class ${classeId} has no GroupePartage`);
+        }
+
+        // 2. Groupes des MATIÈRES
+        const MatiereRepository = AppDataSource.getRepository('Matiere' as any);
+        const matieres = await MatiereRepository.find({
+            where: { classe: { id: classeId } },
+            relations: ['groupePartage']
+        });
+        console.log(`[SYNC] Found ${matieres.length} matieres for class ${classeId}`);
+
+        for (const matiere of matieres) {
+            if (matiere.groupePartage) {
+                console.log(`[SYNC] Adding to Matiere Group: ${matiere.groupePartage.id} (Matiere: ${matiere.matiereName})`);
+                await this.addUserToCustomGroupe(userId, matiere.groupePartage.id);
+            }
+        }
+
+        // 3. Groupe de la FILIÈRE
+        if (classe.filiere && classe.filiere.groupePartage) {
+            console.log(`[SYNC] Adding to Filiere Group: ${classe.filiere.groupePartage.id}`);
+            await this.addUserToCustomGroupe(userId, classe.filiere.groupePartage.id);
+        } else {
+            console.warn(`[SYNC] Filiere group missing or filiere not linked`);
+        }
+
+        // 4. Groupe de l'ÉCOLE
+        if (classe.filiere && classe.filiere.school && classe.filiere.school.groupePartage) {
+            console.log(`[SYNC] Adding to School Group: ${classe.filiere.school.groupePartage.id}`);
+            await this.addUserToCustomGroupe(userId, classe.filiere.school.groupePartage.id);
+        } else {
+            console.warn(`[SYNC] School group missing or school not linked via filiere`);
         }
     }
 }
