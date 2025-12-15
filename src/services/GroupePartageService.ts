@@ -105,11 +105,17 @@ export class GroupePartageService {
                             .orWhere('filiereSchool.id IN (:...schoolIds)', { schoolIds })
                             .orWhere('classeFiliereSchool.id IN (:...schoolIds)', { schoolIds })
                             .orWhere('matiereSchool.id IN (:...schoolIds)', { schoolIds })
-                            .orWhere('owner.id = :userId', { userId });
+                            .orWhere('owner.id = :userId', { userId })
+                            .orWhere('users.id = :userId', { userId }); // FIX: Ensure admins see groups they are members of
                     })
                 );
             } else {
-                qb.where('owner.id = :userId', { userId });
+                qb.where(
+                    new Brackets((qb: any) => {
+                        qb.where('owner.id = :userId', { userId })
+                            .orWhere('users.id = :userId', { userId });
+                    })
+                );
             }
             const adminGroups = await qb.getMany();
             if (publicGroup && !adminGroups.some(g => g.id === publicGroup.id)) {
@@ -119,6 +125,7 @@ export class GroupePartageService {
         }
 
         // C. AUTRES (Enseignant, Etudiant, User) : voit ses groupes + groupes où il est membre
+        console.log(`[GET_ALL_GROUPES] User ${userId} is ${user.role}, falling to default logic`);
         qb.where(
             new Brackets((qb: any) => {
                 qb.where('owner.id = :userId', { userId })
@@ -127,6 +134,7 @@ export class GroupePartageService {
         );
 
         const userGroups = await qb.getMany();
+        console.log(`[GET_ALL_GROUPES] Found ${userGroups.length} groups for user ${userId}`);
         if (publicGroup && !userGroups.some(g => g.id === publicGroup.id)) {
             userGroups.unshift(publicGroup);
         }
@@ -1449,6 +1457,17 @@ export class GroupePartageService {
         if (!user) {
             console.error(`[SYNC] User ${userId} not found`);
             throw new Error('Utilisateur non trouvé');
+        }
+
+        // Mettre à jour le rôle en ETUDIANT si ce n'est pas un admin/prof
+        // On ne rétrograde pas un admin ou un prof qui rejoindrait une classe
+        if (user.role !== UserRole.ADMIN &&
+            user.role !== UserRole.SUPERADMIN &&
+            user.role !== UserRole.ENSEIGNANT) {
+
+            console.log(`[SYNC] Updating user ${userId} role to ETUDIANT (current: ${user.role})`);
+            user.role = UserRole.ETUDIANT;
+            await this.userRepository.save(user);
         }
 
         const classe = await this.classRepository.findOne({

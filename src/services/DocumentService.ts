@@ -378,7 +378,17 @@ export class DocumentService {
     async getDocumentsByUser(userId: string): Promise<Document[]> {
         const user = await this.userRepository.findOne({
             where: { id: userId },
-            relations: ['groupesPartage', 'classe', 'classe.groupePartage', 'school', 'school.groupePartage']
+            relations: [
+                'groupesPartage',
+                'classe',
+                'classe.groupePartage',
+                'classe.filiere',
+                'classe.filiere.groupePartage',
+                'classe.filiere.school',
+                'classe.filiere.school.groupePartage',
+                'school',
+                'school.groupePartage'
+            ]
         });
 
         if (!user) {
@@ -401,6 +411,16 @@ export class DocumentService {
         // Groupe de son école
         if (user.school?.groupePartage) {
             groupeIds.push(user.school.groupePartage.id);
+        }
+
+        // Groupe de sa filière (via classe)
+        if (user.classe?.filiere?.groupePartage) {
+            groupeIds.push(user.classe.filiere.groupePartage.id);
+        }
+
+        // Groupe de son école (via filière)
+        if (user.classe?.filiere?.school?.groupePartage) {
+            groupeIds.push(user.classe.filiere.school.groupePartage.id);
         }
 
         // Groupe public
