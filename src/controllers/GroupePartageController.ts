@@ -27,7 +27,7 @@ export class GroupePartageController {
                     // Recharger l'utilisateur avec la relation school et classe
                     const fullUser = await this.userRepository.findOne({
                         where: { id: user.id },
-                        relations: ['school', 'classe', 'ecoles']
+                        relations: ['school', 'classe', 'classe.filiere', 'ecoles']
                     });
 
                     if (fullUser) {

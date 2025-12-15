@@ -29,11 +29,13 @@ export class GroupePartageService {
     // }
 
     async getAllGroupePartage(user?: any, ownedOnly?: boolean): Promise<GroupePartage[]> {
-        console.log('Using NEW implementation of getAllGroupePartage');
-
+        console.log('Using Refactored implementation of getAllGroupePartage');
 
         // Récupère le groupe public (nom 'public')
-        const publicGroup = await this.groupePartageRepository.findOne({ where: { groupeName: 'public' }, relations: ['users', 'documents', 'owner', 'ecole', 'filiere', 'classe'] });
+        const publicGroup = await this.groupePartageRepository.findOne({
+            where: { groupeName: 'public' },
+            relations: ['users', 'documents', 'owner', 'ecole', 'filiere', 'classe']
+        });
 
         // Sécurité : si pas d'utilisateur, retourne seulement le groupe public
         if (!user || !user.id) {
@@ -56,23 +58,21 @@ export class GroupePartageService {
             .leftJoinAndSelect('groupe.matiere', 'matiere')
             .leftJoinAndSelect('matiere.classe', 'matiereClasse')
             .leftJoinAndSelect('matiereClasse.filiere', 'matiereFiliere')
-            .leftJoinAndSelect('matiereFiliere.school', 'matiereSchool');
-
+            .leftJoinAndSelect('matiereFiliere.school', 'matiereSchool')
+            // Important: We need to filter distinct because of the joins
+            .orderBy('groupe.createdAt', 'DESC');
 
         // 2. CAS : ownedOnly = true (Mes groupes)
         if (ownedOnly) {
             qb.where('owner.id = :userId', { userId });
             const ownedGroups = await qb.getMany();
-            // Ajoute le groupe public si non déjà inclus
             if (publicGroup && !ownedGroups.some(g => g.id === publicGroup.id)) {
                 ownedGroups.unshift(publicGroup);
             }
             return ownedGroups;
         }
 
-        // 3. CAS : ownedOnly = false (Tous les groupes visibles pour cet utilisateur)
-
-        // A. SUPERADMIN : voit tout
+        // 3. CAS : SUPERADMIN -> Voit tout
         if (user.role === UserRole.SUPERADMIN || user.role === 'superadmin') {
             const allGroups = await qb.getMany();
             if (publicGroup && !allGroups.some(g => g.id === publicGroup.id)) {
@@ -81,64 +81,62 @@ export class GroupePartageService {
             return allGroups;
         }
 
-        // B. ADMIN : voit ses écoles (qu'il administre) + ses groupes + son école d'appartenance (si défini)
-        if (user.role === UserRole.ADMIN || user.role === 'admin') {
-            let schoolIds: string[] = [];
+        // 4. CAS GÉNÉRAL (Admin, Enseignant, Etudiant)
+        // On construit une liste de conditions OR
+        // Tout utilisateur voit :
+        // - Les groupes dont il est propriétaire
+        // - Les groupes dont il est membre
 
-            // 1. Ecoles administrées (relation OneToMany 'ecoles' sur User)
-            if (user.ecoles && user.ecoles.length > 0) {
-                schoolIds.push(...user.ecoles.map((e: Ecole) => e.id));
+        qb.where(new Brackets((subQb) => {
+            // Condition 1: Propriétaire
+            subQb.where('owner.id = :userId', { userId })
+                // Condition 2: Membre
+                .orWhere('users.id = :userId', { userId });
+
+            // SI ADMIN : voit aussi les groupes de ses écoles
+            if (user.role === UserRole.ADMIN || user.role === 'admin') {
+                let schoolIds: string[] = [];
+
+                if (user.ecoles && user.ecoles.length > 0) {
+                    schoolIds.push(...user.ecoles.map((e: any) => e.id));
+                }
+                if (user.school && user.school.id) {
+                    schoolIds.push(user.school.id);
+                }
+                schoolIds = [...new Set(schoolIds)];
+
+                if (schoolIds.length > 0) {
+                    subQb.orWhere('ecole.id IN (:...schoolIds)', { schoolIds })
+                        .orWhere('filiereSchool.id IN (:...schoolIds)', { schoolIds })
+                        .orWhere('classeFiliereSchool.id IN (:...schoolIds)', { schoolIds })
+                        .orWhere('matiereSchool.id IN (:...schoolIds)', { schoolIds });
+                }
             }
 
-            // 2. Ecole d'appartenance (relation ManyToOne 'school' sur User - cas hybride ou legacy)
-            if (user.school && user.school.id) {
-                schoolIds.push(user.school.id);
-            }
+            // 5. CAS ÉTUDIANT : voit aussi les groupes de sa classe, filière, école
+            if (user.role === UserRole.ETUDIANT || user.role === 'etudiant') {
+                if (user.classe) {
+                    subQb.orWhere('groupe.classe.id = :classeId', { classeId: user.classe.id });
 
-            // Dédoublonnage des IDs
-            schoolIds = [...new Set(schoolIds)];
+                    if (user.classe.filiere) {
+                        subQb.orWhere('groupe.filiere.id = :filiereId', { filiereId: user.classe.filiere.id });
+                    }
+                }
 
-            if (schoolIds.length > 0) {
-                qb.where(
-                    new Brackets((qb: any) => {
-                        qb.where('ecole.id IN (:...schoolIds)', { schoolIds })
-                            .orWhere('filiereSchool.id IN (:...schoolIds)', { schoolIds })
-                            .orWhere('classeFiliereSchool.id IN (:...schoolIds)', { schoolIds })
-                            .orWhere('matiereSchool.id IN (:...schoolIds)', { schoolIds })
-                            .orWhere('owner.id = :userId', { userId })
-                            .orWhere('users.id = :userId', { userId }); // FIX: Ensure admins see groups they are members of
-                    })
-                );
-            } else {
-                qb.where(
-                    new Brackets((qb: any) => {
-                        qb.where('owner.id = :userId', { userId })
-                            .orWhere('users.id = :userId', { userId });
-                    })
-                );
+                if (user.school) {
+                    subQb.orWhere('groupe.ecole.id = :schoolId', { schoolId: user.school.id });
+                }
             }
-            const adminGroups = await qb.getMany();
-            if (publicGroup && !adminGroups.some(g => g.id === publicGroup.id)) {
-                adminGroups.unshift(publicGroup);
-            }
-            return adminGroups;
+        }));
+
+        const resultGroups = await qb.getMany();
+
+        // Toujours ajouter le groupe public s'il n'est pas déjà présent
+        if (publicGroup && !resultGroups.some(g => g.id === publicGroup.id)) {
+            resultGroups.unshift(publicGroup);
         }
 
-        // C. AUTRES (Enseignant, Etudiant, User) : voit ses groupes + groupes où il est membre
-        console.log(`[GET_ALL_GROUPES] User ${userId} is ${user.role}, falling to default logic`);
-        qb.where(
-            new Brackets((qb: any) => {
-                qb.where('owner.id = :userId', { userId })
-                    .orWhere('users.id = :userId', { userId });
-            })
-        );
-
-        const userGroups = await qb.getMany();
-        console.log(`[GET_ALL_GROUPES] Found ${userGroups.length} groups for user ${userId}`);
-        if (publicGroup && !userGroups.some(g => g.id === publicGroup.id)) {
-            userGroups.unshift(publicGroup);
-        }
-        return userGroups;
+        return resultGroups;
     }
 
     /**
