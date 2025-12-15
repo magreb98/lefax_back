@@ -387,7 +387,15 @@ export class DocumentService {
                 'classe.filiere.school',
                 'classe.filiere.school.groupePartage',
                 'school',
-                'school.groupePartage'
+                'school.groupePartage',
+                'ecoles',
+                'ecoles.groupePartage',
+                'ecoles.filieres',
+                'ecoles.filieres.groupePartage',
+                'ecoles.filieres.classes',
+                'ecoles.filieres.classes.groupePartage',
+                'ecoles.filieres.classes.matieres',
+                'ecoles.filieres.classes.matieres.groupePartage'
             ]
         });
 
@@ -395,8 +403,45 @@ export class DocumentService {
             throw new Error('Utilisateur non trouvé');
         }
 
+        // Si SUPERADMIN, retourner tous les documents
+        if (user.role === UserRole.SUPERADMIN) {
+            return await this.documentRepository.find({
+                relations: ['categorie', 'addedBy', 'matiere', 'groupesPartage'],
+                order: { createdAt: 'DESC' }
+            });
+        }
+
         // Récupérer tous les IDs des groupes auxquels l'utilisateur a accès
         const groupeIds: string[] = [];
+
+        // 1. Groupes liés à l'administration d'écoles (Si ADMIN)
+        if (user.role === UserRole.ADMIN && user.ecoles && user.ecoles.length > 0) {
+            user.ecoles.forEach(ecole => {
+                // Groupe de l'école
+                if (ecole.groupePartage) {
+                    groupeIds.push(ecole.groupePartage.id);
+                }
+
+                // Groupes des filières, classes et matières de l'école
+                if (ecole.filieres) {
+                    ecole.filieres.forEach(filiere => {
+                        if (filiere.groupePartage) groupeIds.push(filiere.groupePartage.id);
+
+                        if (filiere.classes) {
+                            filiere.classes.forEach(classe => {
+                                if (classe.groupePartage) groupeIds.push(classe.groupePartage.id);
+
+                                if (classe.matieres) {
+                                    classe.matieres.forEach(matiere => {
+                                        if (matiere.groupePartage) groupeIds.push(matiere.groupePartage.id);
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        }
 
         // Groupes de partage directs
         if (user.groupesPartage) {

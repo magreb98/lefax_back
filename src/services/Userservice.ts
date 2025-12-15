@@ -5,6 +5,7 @@ import { Ecole } from "../entity/ecole";
 import { GroupePartageService } from "./GroupePartageService";
 import bcrypt from 'bcryptjs';
 import { GroupePartage } from "../entity/groupe.partage";
+import { Brackets } from "typeorm";
 
 export class UserService {
     private userRepository = AppDataSource.getRepository(User);
@@ -122,11 +123,37 @@ export class UserService {
         schoolId?: string;
         classeId?: string;
         isActive?: boolean;
+        requestingUserId?: string; // ID de l'utilisateur qui fait la demande
     }): Promise<User[]> {
         const query = this.userRepository
             .createQueryBuilder('user')
             .leftJoinAndSelect('user.school', 'school')
             .leftJoinAndSelect('user.classe', 'classe');
+
+        // Logique de restriction pour les Admin d'école
+        if (filters?.requestingUserId) {
+            const requestingUser = await this.userRepository.findOne({
+                where: { id: filters.requestingUserId },
+                relations: ['ecoles']
+            });
+
+            if (requestingUser) {
+                // Si c'est un ADMIN, il ne doit voir que les utilisateurs de ses écoles
+                if (requestingUser.role === UserRole.ADMIN && requestingUser.ecoles && requestingUser.ecoles.length > 0) {
+                    const schoolIds = requestingUser.ecoles.map(e => e.id);
+
+                    // Join nécessaire pour vérifier l'école via la classe
+                    query.leftJoin('classe.filiere', 'filiere')
+                        .leftJoin('filiere.school', 'classeSchool');
+
+                    query.andWhere(new Brackets(qb => {
+                        qb.where('school.id IN (:...adminSchoolIds)', { adminSchoolIds: schoolIds })
+                            .orWhere('classeSchool.id IN (:...adminSchoolIds)', { adminSchoolIds: schoolIds });
+                    }));
+                }
+                // Si c'est un SUPERADMIN, il voit tout (pas de restriction supplémentaire)
+            }
+        }
 
         if (filters?.role) query.andWhere('user.role = :role', { role: filters.role });
         if (filters?.schoolId) query.andWhere('school.id = :schoolId', { schoolId: filters.schoolId });

@@ -56,7 +56,8 @@ export class UserController {
         role: role as UserRole,
         schoolId: schoolId as string,
         classeId: classeId as string,
-        isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined
+        isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
+        requestingUserId: (req as any).userId // On passe l'ID de l'utilisateur connecté
       });
 
       res.json({
