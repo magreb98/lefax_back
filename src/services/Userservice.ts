@@ -395,6 +395,12 @@ export class UserService {
         if (user.canCreateSchool) throw new Error('Cet utilisateur a déjà le droit de créer une école');
 
         user.canCreateSchool = true;
+
+        // Promote to ADMIN if not already ADMIN or SUPERADMIN
+        if (user.role !== UserRole.ADMIN && user.role !== UserRole.SUPERADMIN) {
+            user.role = UserRole.ADMIN;
+        }
+
         return await this.userRepository.save(user);
     }
 

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { UserController } from '../controllers/UserController';
 import { authMiddleware, requireAdmin } from '../middleware/auth';
 import { requireSuperAdmin, requireStudentManagementAccess, autoFilterBySchool } from '../middleware/schoolAuth';
@@ -7,7 +7,7 @@ const router = Router();
 const userController = new UserController();
 
 // ========== ROUTES CRUD DE BASE ==========
-// ⚠️ IMPORTANT : Les routes spécifiques AVANT les routes avec paramètres dynamiques
+//  IMPORTANT : Les routes spécifiques AVANT les routes avec paramètres dynamiques
 
 /**
  * POST /api/users/register
@@ -190,5 +190,17 @@ router.post('/permissions/grant-view-all-groups', authMiddleware, requireAdmin, 
  * Révoquer la permission de voir tous les groupes (ADMIN only)
  */
 router.post('/permissions/revoke-view-all-groups', authMiddleware, requireAdmin, (req, res) => userController.revokeViewAllGroupsPermission(req, res));
+
+/**
+ * POST /api/users/permissions/grant-school-creation
+ * Accorder le droit de créer une école (SUPERADMIN only)
+ */
+router.post('/permissions/grant-school-creation', authMiddleware, requireSuperAdmin, (req, res) => userController.grantSchoolCreationRight(req, res));
+
+/**
+ * POST /api/users/permissions/revoke-school-creation
+ * Révoquer le droit de créer une école (SUPERADMIN only)
+ */
+router.post('/permissions/revoke-school-creation', authMiddleware, requireSuperAdmin, (req, res) => userController.revokeSchoolCreationRight(req, res));
 
 export default router;

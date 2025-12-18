@@ -769,4 +769,48 @@ export class UserController {
       });
     }
   }
+
+  /**
+   * Accorder le droit de créer une école (SUPERADMIN only)
+   */
+  async grantSchoolCreationRight(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId } = req.body;
+
+      if (!userId) {
+        res.status(400).json({ message: 'userId est requis' });
+        return;
+      }
+
+      const user = await this.userService.grantSchoolCreationRight(userId);
+      res.status(200).json(user);
+    } catch (error: any) {
+      console.error('Erreur lors de l\'octroi du droit de création:', error);
+      res.status(400).json({
+        message: error.message || 'Erreur lors de l\'octroi du droit de création'
+      });
+    }
+  }
+
+  /**
+   * Révoquer le droit de créer une école (SUPERADMIN only)
+   */
+  async revokeSchoolCreationRight(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId } = req.body;
+
+      if (!userId) {
+        res.status(400).json({ message: 'userId est requis' });
+        return;
+      }
+
+      const user = await this.userService.revokeSchoolCreationRight(userId);
+      res.status(200).json(user);
+    } catch (error: any) {
+      console.error('Erreur lors de la révocation du droit de création:', error);
+      res.status(400).json({
+        message: error.message || 'Erreur lors de la révocation du droit de création'
+      });
+    }
+  }
 }
