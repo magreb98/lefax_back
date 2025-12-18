@@ -3,6 +3,7 @@ import { User, UserRole } from "../entity/user";
 import { Class } from "../entity/classe";
 import { Ecole } from "../entity/ecole";
 import { GroupePartageService } from "./GroupePartageService";
+import { asyncJobService, AsyncJobType } from "./AsyncJobService";
 import bcrypt from 'bcryptjs';
 import { GroupePartage } from "../entity/groupe.partage";
 import { Brackets } from "typeorm";
@@ -67,7 +68,7 @@ export class UserService {
         await this.addUserToPublicGroup(user.id);
 
         if (data.classeId) {
-            await this.groupePartageService.enrollUserInClassHierarchy(user.id, data.classeId);
+            asyncJobService.emit(AsyncJobType.USER_JOINED_CLASS, { userId: user.id, classeId: data.classeId });
         }
 
         return user;
@@ -169,7 +170,7 @@ export class UserService {
     async getUserById(id: string): Promise<User | null> {
         return await this.userRepository.findOne({
             where: { id },
-            relations: ['school', 'classe', 'groupesPartage', 'enseignements', 'enseignements.matiere', 'enseignements.classe', 'ecoles']
+            relations: ['school', 'classe', 'groupesPartage', 'enseignements', 'enseignements.matiere', 'enseignements.classe', 'ecoles', 'filiere', 'filiere.school']
         });
     }
 
@@ -261,7 +262,7 @@ export class UserService {
         await this.userRepository.save(user);
         await this.userRepository.save(user);
         // await this.groupePartageService.syncClasseGroupePartage(classeId);
-        await this.groupePartageService.enrollUserInClassHierarchy(userId, classeId);
+        asyncJobService.emit(AsyncJobType.USER_JOINED_CLASS, { userId, classeId });
 
         return user;
     }
@@ -543,7 +544,7 @@ export class UserService {
 
         // Pour chaque utilisateur, on l'ajoute à toute la hiérarchie
         for (const user of users) {
-            await this.groupePartageService.enrollUserInClassHierarchy(user.id, classeId);
+            asyncJobService.emit(AsyncJobType.USER_JOINED_CLASS, { userId: user.id, classeId });
         }
 
         return users;

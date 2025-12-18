@@ -132,6 +132,10 @@ const initializeApp = async () => {
     await AppDataSource.initialize();
     logger.info('✅ Base de données connectée avec succès');
 
+    // Register background job listeners
+    const { registerServiceListeners } = await import('./services/serviceListeners');
+    registerServiceListeners();
+
     // 🌱 Seed des utilisateurs par défaut
     const { seedDefaultUsers } = await import('./scripts/seedDefaultUsers');
     await seedDefaultUsers();

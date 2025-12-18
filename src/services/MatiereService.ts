@@ -38,27 +38,20 @@ export class MatiereService {
             throw new Error(`Une matière nommée "${data.matiereName}" existe déjà dans cette classe`);
         }
 
-        // Créer la matière
-        const matiere = this.matiereRepository.create({
+        // Créer la matière avec son groupe de partage (utilisant la logique centralisée)
+        const matiereData = {
             matiereName: data.matiereName,
             description: data.description,
             matiereCode: data.matiereCode,
             classe
-        });
+        };
 
-        const savedMatiere = await this.matiereRepository.save(matiere);
-
-        // Auto-créer le sous-groupe de partage par défaut
         if (data.createSubGroup !== false) {
-            const groupeName = `${savedMatiere.matiereName} - ${classe.className}`;
-            const description = `Groupe de partage pour la matière ${savedMatiere.matiereName}`;
-            const groupe = await this.groupePartageService.createCustomGroupe(groupeName, description, []);
-
-            savedMatiere.groupePartage = groupe;
-            await this.matiereRepository.save(savedMatiere);
+            return await this.groupePartageService.createMatiereWithGroupe(matiereData, data.classeId);
+        } else {
+            const matiere = this.matiereRepository.create(matiereData);
+            return await this.matiereRepository.save(matiere);
         }
-
-        return savedMatiere;
     }
 
     /**

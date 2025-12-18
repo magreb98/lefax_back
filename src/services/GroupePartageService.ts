@@ -8,6 +8,7 @@ import { GroupePartage, GroupePartageType } from "../entity/groupe.partage";
 import { Document } from "../entity/document";
 import { DocumentCategorie } from "../entity/document.categorie";
 import { Brackets, SelectQueryBuilder } from 'typeorm';
+import { asyncJobService, AsyncJobType } from "./AsyncJobService";
 
 
 export class GroupePartageService {
@@ -1277,7 +1278,7 @@ export class GroupePartageService {
         await this.groupePartageRepository.save(groupePartage);
 
         // Synchroniser le groupe (étudiants + enseignants)
-        await this.syncMatiereGroupePartage(savedMatiere.id);
+        asyncJobService.emit(AsyncJobType.SYNC_CLASS_MATIERES, { matiereId: savedMatiere.id, classeId });
 
         return savedMatiere;
     }
