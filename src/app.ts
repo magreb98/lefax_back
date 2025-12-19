@@ -136,6 +136,10 @@ const initializeApp = async () => {
     const { registerServiceListeners } = await import('./services/serviceListeners');
     registerServiceListeners();
 
+    // Initialisation de l'index OpenSearch
+    const { openSearchService } = await import('./services/OpenSearchService');
+    await openSearchService.initializeIndex();
+
     // 🌱 Seed des utilisateurs par défaut
     const { seedDefaultUsers } = await import('./scripts/seedDefaultUsers');
     await seedDefaultUsers();

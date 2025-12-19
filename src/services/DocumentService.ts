@@ -105,8 +105,13 @@ export class DocumentService {
             groupesPartage
         });
 
-        await this.documentRepository.save(document);
-        return document;
+        const savedDocument = await this.documentRepository.save(document);
+
+        // Emit event for OpenSearch indexing
+        const { asyncJobService, AsyncJobType } = require('./AsyncJobService');
+        asyncJobService.emit(AsyncJobType.DOCUMENT_CREATED, { documentId: savedDocument.id });
+
+        return savedDocument;
     }
 
     /**
@@ -247,7 +252,15 @@ export class DocumentService {
     async getDocumentById(id: string): Promise<Document | null> {
         return await this.documentRepository.findOne({
             where: { id },
-            relations: ['categorie', 'addedBy', 'matiere', 'groupesPartage']
+            relations: [
+                'categorie',
+                'addedBy',
+                'matiere',
+                'matiere.classe',
+                'matiere.classe.filiere',
+                'matiere.classe.filiere.school',
+                'groupesPartage'
+            ]
         });
     }
 
@@ -349,8 +362,13 @@ export class DocumentService {
             }
         }
 
-        await this.documentRepository.save(document);
-        return document;
+        const updatedDocument = await this.documentRepository.save(document);
+
+        // Emit event for OpenSearch indexing
+        const { asyncJobService, AsyncJobType } = require('./AsyncJobService');
+        asyncJobService.emit(AsyncJobType.DOCUMENT_UPDATED, { documentId: updatedDocument.id });
+
+        return updatedDocument;
     }
 
     /**
@@ -368,7 +386,12 @@ export class DocumentService {
             fs.unlinkSync(document.documentUrl);
         }
 
+        const docId = document.id;
         await this.documentRepository.remove(document);
+
+        // Emit event for OpenSearch indexing
+        const { asyncJobService, AsyncJobType } = require('./AsyncJobService');
+        asyncJobService.emit(AsyncJobType.DOCUMENT_DELETED, { documentId: docId });
     }
 
     /**

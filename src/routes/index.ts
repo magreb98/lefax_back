@@ -9,6 +9,7 @@ import classeRoutes from './classes';
 import groupeRoutes from './groupe.partage';
 import notificationRoutes from './notifications';
 import matiereRoutes from './matieres';
+import searchRoutes from './search';
 
 const router = Router();
 
@@ -34,5 +35,7 @@ router.use('/groupes', (req, res, next) => {
 
 router.use('/notifications', notificationRoutes);
 router.use('/matieres', matiereRoutes);
+router.use('/search', searchRoutes);
+
 
 export default router;

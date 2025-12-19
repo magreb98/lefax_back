@@ -3,7 +3,10 @@ import { EventEmitter } from 'events';
 export enum AsyncJobType {
     USER_JOINED_CLASS = 'user.joined_class',
     MATIERE_CREATED = 'matiere.created',
-    SYNC_CLASS_MATIERES = 'class.sync_matieres'
+    SYNC_CLASS_MATIERES = 'class.sync_matieres',
+    DOCUMENT_CREATED = 'document.created',
+    DOCUMENT_UPDATED = 'document.updated',
+    DOCUMENT_DELETED = 'document.deleted'
 }
 
 export class AsyncJobService {

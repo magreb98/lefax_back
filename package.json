@@ -13,7 +13,8 @@
     "test:coverage": "jest --coverage",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/config/dataSource.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/dataSource.ts",
-    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/dataSource.ts"
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/dataSource.ts",
+    "index-documents": "ts-node src/scripts/indexDocuments.ts"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +22,7 @@
   "type": "commonjs",
   "dependencies": {
     "@nestjs/swagger": "^11.2.1",
+    "@opensearch-project/opensearch": "^3.5.1",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
