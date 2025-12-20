@@ -202,7 +202,7 @@ export class OpenSearchService {
     }
 
     /**
-     * Rechercher des documents avec RBAC
+     * Rechercher des documents avec RBACp
      */
     async search(params: {
         query: string;
