@@ -50,6 +50,44 @@ router.post('/login', authController.login.bind(authController));
 
 /**
  * @swagger
+ * /api/auth/google:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Authentification Google
+ *     description: Authentifie ou inscrit un utilisateur via Google ID Token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *             properties:
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Authentification réussie
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token:
+ *                   type: string
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Token requis ou invalide
+ *       401:
+ *         description: Compte désactivé
+ */
+router.post('/google', authController.googleLogin.bind(authController));
+
+/**
+ * @swagger
  * /api/auth/logout:
  *   post:
  *     tags:

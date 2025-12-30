@@ -25,6 +25,9 @@ export class User {
     @Column()
     lastName!: string;
 
+    @Column({ unique: true, nullable: true })
+    googleId?: string;
+
     @Column({ unique: true })
     email!: string;
 
@@ -50,8 +53,8 @@ export class User {
     @Column({ default: false })
     isVerified!: boolean;
 
-    @Column()
-    password!: string;
+    @Column({ nullable: true })
+    password?: string;
 
     // Permission de créer une école (accordée par le SUPERADMIN)
     @Column({ default: false })

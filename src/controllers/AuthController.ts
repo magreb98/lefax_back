@@ -2,14 +2,17 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
 import { AppDataSource } from '../config/database';
-import { User } from '../entity/user';
+import { User, UserRole } from '../entity/user';
 import { formatErrorResponse } from '../util/helper';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import { MoreThan } from 'typeorm';
 
+import { OAuth2Client } from 'google-auth-library';
+
 export class AuthController {
   private userRepository = AppDataSource.getRepository(User);
+  private googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
   async login(req: Request, res: Response) {
     try {
@@ -28,6 +31,10 @@ export class AuthController {
 
       if (!user) {
         return res.status(401).json({ message: 'Identifiants invalides' });
+      }
+
+      if (!user.password) {
+        return res.status(401).json({ message: 'Ce compte utilise une connexion Google. Veuillez vous connecter avec Google.' });
       }
 
       const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -234,6 +241,103 @@ export class AuthController {
 
       return res.json({ message: 'Mot de passe modifié avec succès. Vous pouvez maintenant vous connecter.' });
     } catch (error) {
+      return res.status(500).json(formatErrorResponse(error));
+    }
+  }
+
+  async googleLogin(req: Request, res: Response) {
+    try {
+      const { token } = req.body;
+
+      if (!token) {
+        return res.status(400).json({ message: 'Token Google requis' });
+      }
+
+      // Vérifier le token Google
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: token,
+        audience: process.env.GOOGLE_CLIENT_ID
+      });
+
+      const payload = ticket.getPayload();
+
+      if (!payload || !payload.email) {
+        return res.status(400).json({ message: 'Token Google invalide' });
+      }
+
+      console.log('Google Auth attempt for:', payload.email);
+
+      // Vérifier si l'utilisateur existe déjà
+      let user = await this.userRepository.findOne({
+        where: { email: payload.email },
+        relations: ['school', 'classe', 'ecoles']
+      });
+
+      if (user) {
+        // Mettre à jour le googleId s'il n'est pas présent
+        if (!user.googleId) {
+          user.googleId = payload.sub;
+          await this.userRepository.save(user);
+        }
+      } else {
+        // Créer un nouvel utilisateur
+        user = this.userRepository.create({
+          firstName: payload.given_name || 'Utilisateur',
+          lastName: payload.family_name || 'Google',
+          email: payload.email,
+          googleId: payload.sub,
+          password: undefined, // Pas de mot de passe pour les utilisateurs Google
+          isActive: true, // TODO: Vérifier si on active par défaut
+          isVerified: true, // Email déjà vérifié par Google
+          phoneNumber: '', // À compléter par l'utilisateur plus tard
+          role: UserRole.USER // Rôle par défaut
+        });
+
+        await this.userRepository.save(user);
+      }
+
+      if (!user.isActive) {
+        return res.status(401).json({ message: 'Compte désactivé' });
+      }
+
+      // Générer le token JWT de l'application
+      const jwtSecret: string = process.env.JWT_SECRET || 'your-secret-key-un-peu-plus-secure-comme-ca';
+      const jwtExpiresIn: string = process.env.JWT_EXPIRES_IN || '24h';
+
+      const appToken = jwt.sign(
+        { userId: user.id, role: user.role },
+        jwtSecret,
+        { expiresIn: jwtExpiresIn } as SignOptions
+      );
+
+      // Si l'admin n'a pas de school définie mais gère une école, on utilise cette école
+      let userSchool = user.school;
+      if (!userSchool && user.ecoles && user.ecoles.length > 0) {
+        userSchool = user.ecoles[0];
+      }
+
+      // Retourner le token et les informations utilisateur
+      const userResponse = {
+        id: user.id,
+        name: `${user.firstName} ${user.lastName}`,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        phone: user.phoneNumber,
+        isActive: user.isActive,
+        school: userSchool,
+        classe: user.classe,
+        picture: payload.picture
+      };
+
+      return res.json({
+        user: userResponse,
+        token: appToken
+      });
+
+    } catch (error) {
+      console.error('Erreur Google Login:', error);
       return res.status(500).json(formatErrorResponse(error));
     }
   }

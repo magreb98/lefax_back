@@ -37,7 +37,9 @@ export class OpenSearchService {
                             attachment: {
                                 field: "data",
                                 target_field: "attachment",
-                                ignore_missing: true
+                                ignore_missing: true,
+                                indexed_chars: -1, // Unlimited characters
+                                properties: ["content", "title", "author", "keywords", "date", "content_type", "content_length", "language"]
                             }
                         },
                         {
@@ -52,11 +54,25 @@ export class OpenSearchService {
                                 field: "data",
                                 ignore_missing: true
                             }
+                        },
+                        {
+                            remove: {
+                                field: "attachment.content", // Save space by removing duplicate content in attachment object
+                                ignore_missing: true
+                            }
+                        }
+                    ],
+                    on_failure: [
+                        {
+                            set: {
+                                field: "error",
+                                value: "Processor failed: {{ _ingest.on_failure_message }}"
+                            }
                         }
                     ]
                 } as any
             });
-            console.log(`[OpenSearch] Pipeline ${this.pipelineName} configuré`);
+            console.log(`[OpenSearch] Pipeline ${this.pipelineName} configuré avec succès (indexed_chars: -1)`);
         } catch (error) {
             console.error('[OpenSearch] Erreur lors de la configuration du pipeline:', error);
         }
@@ -162,15 +178,33 @@ export class OpenSearchService {
             // Essayer d'indexer le contenu du fichier si disponible (Phase 3)
             if (document.documentUrl) {
                 try {
-                    // documentUrl est déjà relatif à "src/" normalement, ou contient le chemin complet
-                    // On vérifie le chemin
-                    const filePath = path.join(process.cwd(), 'src', document.documentUrl.replace(/^\/?src\//, ''));
+                    let filePath: string;
+
+                    if (path.isAbsolute(document.documentUrl)) {
+                        filePath = document.documentUrl;
+                    } else {
+                        // Normaliser le chemin du fichier
+                        // Supprimer le préfixe 'src/' ou 'src\' éventuel pour avoir un chemin relatif propre
+                        const relativePath = document.documentUrl.replace(/^(src[\\\/])?/, '');
+
+                        // Construire le chemin absolu en présumant que 'uploads/' est dans 'src/'
+                        filePath = path.join(process.cwd(), 'src', relativePath);
+
+                        // Fallback: si le fichier n'existe pas, essayer directement process.cwd() + relativePath
+                        if (!fs.existsSync(filePath)) {
+                            filePath = path.join(process.cwd(), relativePath);
+                        }
+                    }
+
                     if (fs.existsSync(filePath)) {
                         const fileBuffer = fs.readFileSync(filePath);
                         documentToIndex.data = fileBuffer.toString('base64');
+                        // console.log(`[OpenSearch] Contenu lu pour: ${document.documentName}`); // Verbose
+                    } else {
+                        console.warn(`[OpenSearch] Fichier introuvable pour indexation: ${filePath} (Source: ${document.documentUrl})`);
                     }
                 } catch (err) {
-                    console.warn(`[OpenSearch] Impossible de lire le fichier pour indexation du contenu: ${document.documentUrl}`);
+                    console.warn(`[OpenSearch] Erreur lecture fichier: ${document.documentUrl}`, err);
                 }
             }
 
@@ -223,12 +257,37 @@ export class OpenSearchService {
                         bool: {
                             must: [
                                 {
-                                    multi_match: {
-                                        query,
-                                        fields: ['documentName^5', 'description^2', 'content', 'groupName^2', 'categoryName^2', 'publicationYear'],
-                                        fuzziness: 'AUTO',
-                                    },
-                                },
+                                    bool: {
+                                        should: [
+                                            {
+                                                multi_match: {
+                                                    query,
+                                                    fields: ['documentName^5', 'description^2', 'content', 'groupName^2', 'categoryName^2', 'publicationYear'],
+                                                    fuzziness: 'AUTO',
+                                                }
+                                            },
+                                            {
+                                                match_phrase: {
+                                                    "content": {
+                                                        query,
+                                                        boost: 10,
+                                                        slop: 2
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                match_phrase: {
+                                                    "documentName": {
+                                                        query,
+                                                        boost: 20, // Encore plus de boost si le nom exact matche
+                                                        slop: 2
+                                                    }
+                                                }
+                                            }
+                                        ],
+                                        minimum_should_match: 1
+                                    }
+                                }
                             ],
                         },
                     },
@@ -261,10 +320,15 @@ export class OpenSearchService {
                 fileTypes: { terms: { field: "fileType" } }
             },
             highlight: {
+                pre_tags: ["<mark class='bg-yellow-300 text-black rounded px-0.5'>"],
+                post_tags: ["</mark>"],
                 fields: {
-                    documentName: {},
+                    documentName: { number_of_fragments: 0 }, // Tout le titre
                     description: {},
-                    content: {}
+                    content: {
+                        fragment_size: 150,
+                        number_of_fragments: 3
+                    }
                 },
             },
         };

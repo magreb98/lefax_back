@@ -10,6 +10,7 @@ import { GroupePartage } from "../entity/groupe.partage";
 import { Matiere } from "../entity/matiere";
 import { Document } from "../entity/document";
 import { EnseignementAssignment } from "../entity/enseignement.assigment";
+import { DocumentMetadata } from "../entity/document.metadata";
 
 dotenv.config();
 
@@ -32,7 +33,8 @@ export const AppDataSource = new DataSource({
     Notification,
     GroupePartage,
     Matiere,
-    EnseignementAssignment
+    EnseignementAssignment,
+    DocumentMetadata
   ],
   migrations: ['src/migrations/*.ts'],
   subscribers: ['src/subscribers/*.ts'],
