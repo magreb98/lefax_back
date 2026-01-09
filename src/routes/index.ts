@@ -10,6 +10,7 @@ import groupeRoutes from './groupe.partage';
 import notificationRoutes from './notifications';
 import matiereRoutes from './matieres';
 import searchRoutes from './search';
+import userSearchPreferencesRoutes from './userSearchPreferences';
 
 const router = Router();
 
@@ -36,6 +37,9 @@ router.use('/groupes', (req, res, next) => {
 router.use('/notifications', notificationRoutes);
 router.use('/matieres', matiereRoutes);
 router.use('/search', searchRoutes);
+
+// Routes pour les préférences de recherche
+router.use('/users', userSearchPreferencesRoutes);
 
 
 export default router;

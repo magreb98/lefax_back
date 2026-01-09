@@ -769,15 +769,23 @@ export class GroupePartageController {
             // Assuming auth middleware populates req.user
             const userId = (req as any).user?.id;
 
+            console.log('🔗 [JOIN] Request received:', { token, userId, body: req.body });
+
             if (!token || !userId) {
+                console.error('❌ [JOIN] Missing token or userId');
                 res.status(400).json({ message: 'Token et authentification requis' });
                 return;
             }
 
-            const groupe = await this.groupePartageService.joinByInvitation(token, userId);
-            res.status(200).json({ message: 'Groupe rejoint avec succès', groupe });
+            const result = await this.groupePartageService.joinByInvitation(token, userId);
+            res.status(200).json({
+                message: 'Groupe rejoint avec succès',
+                groupe: result.groupe,
+                user: result.user
+            });
         } catch (error: any) {
-            console.error('Erreur rejoindre groupe:', error);
+            console.error('❌ [JOIN] Error joining group:', error.message);
+            console.error(error.stack);
             res.status(400).json({ message: error.message });
         }
     }

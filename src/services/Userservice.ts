@@ -3,7 +3,7 @@ import { User, UserRole } from "../entity/user";
 import { Class } from "../entity/classe";
 import { Ecole } from "../entity/ecole";
 import { GroupePartageService } from "./GroupePartageService";
-import { asyncJobService, AsyncJobType } from "./AsyncJobService";
+import { AutoGroupEnrollmentService } from "./AutoGroupEnrollmentService";
 import bcrypt from 'bcryptjs';
 import { GroupePartage } from "../entity/groupe.partage";
 import { Brackets } from "typeorm";
@@ -14,6 +14,7 @@ export class UserService {
     private ecoleRepository = AppDataSource.getRepository(Ecole);
     private groupePartageRepository = AppDataSource.getRepository(GroupePartage);
     private groupePartageService = new GroupePartageService();
+    private autoEnrollmentService = new AutoGroupEnrollmentService();
 
     /**
      * Créer un nouvel utilisateur
@@ -67,8 +68,9 @@ export class UserService {
         // Auto-join user to public group
         await this.addUserToPublicGroup(user.id);
 
+        // ✅ SIMPLIFICATION: Appel direct au lieu d'événement asynchrone
         if (data.classeId) {
-            asyncJobService.emit(AsyncJobType.USER_JOINED_CLASS, { userId: user.id, classeId: data.classeId });
+            await this.autoEnrollmentService.enrollStudentInClassHierarchy(user.id, data.classeId);
         }
 
         return user;
@@ -260,9 +262,9 @@ export class UserService {
         }
 
         await this.userRepository.save(user);
-        await this.userRepository.save(user);
-        await this.groupePartageService.syncClasseGroupePartage(classeId);
-        asyncJobService.emit(AsyncJobType.USER_JOINED_CLASS, { userId, classeId });
+
+        // ✅ SIMPLIFICATION: Un seul appel synchrone, transaction atomique
+        await this.autoEnrollmentService.enrollStudentInClassHierarchy(userId, classeId);
 
         return user;
     }
@@ -544,13 +546,10 @@ export class UserService {
             users.push(user);
         }
 
-        // Synchroniser le groupe de partage une seule fois après avoir ajouté tous les utilisateurs
-        // Synchroniser le groupe de partage une seule fois après avoir ajouté tous les utilisateurs
-        // await this.groupePartageService.syncClasseGroupePartage(classeId);
-
-        // Pour chaque utilisateur, on l'ajoute à toute la hiérarchie
-        for (const user of users) {
-            asyncJobService.emit(AsyncJobType.USER_JOINED_CLASS, { userId: user.id, classeId });
+        // ✅ SIMPLIFICATION: Batch enrollment pour tous les utilisateurs
+        const enrolledUserIds = users.map(u => u.id);
+        if (enrolledUserIds.length > 0) {
+            await this.autoEnrollmentService.batchEnrollStudents(enrolledUserIds, classeId);
         }
 
         return users;

@@ -9,6 +9,8 @@ import { Document } from "../entity/document";
 import { DocumentCategorie } from "../entity/document.categorie";
 import { Brackets, SelectQueryBuilder } from 'typeorm';
 import { asyncJobService, AsyncJobType } from "./AsyncJobService";
+import { AutoGroupEnrollmentService } from "./AutoGroupEnrollmentService";
+import { UserSearchPreferenceService } from "./UserSearchPreferenceService";
 
 
 export class GroupePartageService {
@@ -20,6 +22,8 @@ export class GroupePartageService {
     private enseignementRepository = AppDataSource.getRepository(EnseignementAssignment);
     private documentRepository = AppDataSource.getRepository(Document);
     private documentCategorieRepository = AppDataSource.getRepository(DocumentCategorie);
+    private autoGroupEnrollmentService = new AutoGroupEnrollmentService();
+    private userSearchPreferenceService = new UserSearchPreferenceService();
 
 
     /**
@@ -117,15 +121,19 @@ export class GroupePartageService {
             // 5. CAS ÉTUDIANT : voit aussi les groupes de sa classe, filière, école
             if (user.role === UserRole.ETUDIANT || user.role === 'etudiant') {
                 if (user.classe) {
-                    subQb.orWhere('groupe.classe.id = :classeId', { classeId: user.classe.id });
+                    subQb.orWhere('classe.id = :classeId', { classeId: user.classe.id });
 
                     if (user.classe.filiere) {
-                        subQb.orWhere('groupe.filiere.id = :filiereId', { filiereId: user.classe.filiere.id });
+                        subQb.orWhere('filiere.id = :filiereId', { filiereId: user.classe.filiere.id });
                     }
                 }
 
                 if (user.school) {
-                    subQb.orWhere('groupe.ecole.id = :schoolId', { schoolId: user.school.id });
+                    const schoolId = user.school.id;
+                    subQb.orWhere('ecole.id = :schoolId', { schoolId })
+                        .orWhere('filiereSchool.id = :schoolId', { schoolId })
+                        .orWhere('classeFiliereSchool.id = :schoolId', { schoolId })
+                        .orWhere('matiereSchool.id = :schoolId', { schoolId });
                 }
             }
         }));
@@ -1037,10 +1045,17 @@ export class GroupePartageService {
     /**
      * Rejoindre un groupe via invitation
      */
-    async joinByInvitation(token: string, userId: string): Promise<GroupePartage> {
+    async joinByInvitation(token: string, userId: string): Promise<{ groupe: GroupePartage, user: User }> {
         const groupe = await this.groupePartageRepository.findOne({
             where: { invitationToken: token },
-            relations: ['users', 'classe']
+            relations: [
+                'users',
+                'classe',
+                'matiere',
+                'matiere.classe',
+                'filiere',
+                'ecole'
+            ]
         });
 
         if (!groupe) {
@@ -1065,12 +1080,44 @@ export class GroupePartageService {
             await this.groupePartageRepository.save(groupe);
         }
 
-        // Si le groupe est un groupe de CLASSE, on lance la synchronisation complète de la hiérarchie
-        if (groupe.type === GroupePartageType.CLASS && groupe.classe) {
-            await this.enrollUserInClassHierarchy(user.id, groupe.classe.id);
+        // Déterminer la classe de contexte si ce n'est pas un groupe de classe direct
+        let contextualClasse = groupe.classe;
+        if (!contextualClasse && groupe.type === GroupePartageType.MATIERE && groupe.matiere?.classe) {
+            contextualClasse = groupe.matiere.classe;
         }
 
-        return groupe;
+        // Si on a une classe associée (directement ou via une matière), on lance la synchronisation
+        if (contextualClasse) {
+            console.log(`[JoinByInvitation] Enrolling user ${user.id} in class hierarchy for context: ${contextualClasse.id}`);
+
+            // ✅ SIMPLIFICATION: Enrôlement complet via AutoGroupEnrollmentService
+            // Cette méthode gère maintenant aussi la mise à jour du rôle, de la classe et de l'école de l'utilisateur
+            await this.autoGroupEnrollmentService.enrollStudentInClassHierarchy(user.id, contextualClasse.id);
+
+            // Recharger l'utilisateur pour obtenir le rôle mis à jour et les relations
+            const updatedUser = await this.userRepository.findOne({
+                where: { id: user.id },
+                relations: ['classe', 'school', 'classe.filiere', 'classe.filiere.school']
+            });
+
+            if (updatedUser) {
+                console.log(`[JoinByInvitation] User role after enrollment: ${updatedUser.role}`);
+
+                // Créer les préférences de recherche par défaut pour les étudiants
+                if (updatedUser.role === UserRole.ETUDIANT) {
+                    try {
+                        await this.userSearchPreferenceService.createDefaultPreferences(updatedUser.id, contextualClasse.id);
+                        console.log(`[JoinByInvitation] Search preferences created for student ${updatedUser.id}`);
+                    } catch (prefError: any) {
+                        console.error(`[JoinByInvitation] Failed to create search preferences:`, prefError.message);
+                    }
+                }
+
+                return { groupe, user: updatedUser };
+            }
+        }
+
+        return { groupe, user };
     }
 
     /**
@@ -1278,7 +1325,13 @@ export class GroupePartageService {
         await this.groupePartageRepository.save(groupePartage);
 
         // Synchroniser le groupe (étudiants + enseignants)
-        asyncJobService.emit(AsyncJobType.SYNC_CLASS_MATIERES, { matiereId: savedMatiere.id, classeId });
+        // ✅ SIMPLIFICATION: Enrôlement direct des étudiants via AutoGroupEnrollmentService
+        if (classe.etudiants && classe.etudiants.length > 0) {
+            const studentIds = classe.etudiants.map(u => u.id);
+            console.log(`[GroupePartageService] Auto-enrolling ${studentIds.length} students to new matiere group via batchEnrollStudents`);
+            await this.autoGroupEnrollmentService.batchEnrollStudents(studentIds, classeId);
+        }
+        // asyncJobService.emit(AsyncJobType.SYNC_CLASS_MATIERES, { matiereId: savedMatiere.id, classeId });
 
         return savedMatiere;
     }
@@ -1350,6 +1403,7 @@ export class GroupePartageService {
     }
 
     /**
+     * @deprecated Use AutoGroupEnrollmentService.enrollStudentsInMatiereGroupe logic instead
      * Enroll tous les étudiants d'une classe dans le groupe d'une matière
      */
     async enrollStudentsInMatiereGroupe(matiereId: string, classeId: string): Promise<void> {
@@ -1387,6 +1441,7 @@ export class GroupePartageService {
     }
 
     /**
+     * @deprecated Use AutoGroupEnrollmentService.enrollStudentInClassHierarchy instead
      * Enroll un étudiant dans tous les groupes de matières de sa classe
      * Appelé quand un étudiant est ajouté à une classe
      */
@@ -1447,6 +1502,7 @@ export class GroupePartageService {
     }
 
     /**
+     * @deprecated Use AutoGroupEnrollmentService.enrollStudentInClassHierarchy instead
      * Enroll un utilisateur dans toute la hiérarchie de la classe
      * (Groupe Classe + Groupes Matières + Groupe Filière + Groupe École)
      */

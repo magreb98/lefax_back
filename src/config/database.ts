@@ -11,6 +11,7 @@ import { Matiere } from "../entity/matiere";
 import { Document } from "../entity/document";
 import { EnseignementAssignment } from "../entity/enseignement.assigment";
 import { DocumentMetadata } from "../entity/document.metadata";
+import { UserSearchPreference } from "../entity/user.search.preference";
 
 dotenv.config();
 
@@ -34,7 +35,8 @@ export const AppDataSource = new DataSource({
     GroupePartage,
     Matiere,
     EnseignementAssignment,
-    DocumentMetadata
+    DocumentMetadata,
+    UserSearchPreference
   ],
   migrations: ['src/migrations/*.ts'],
   subscribers: ['src/subscribers/*.ts'],

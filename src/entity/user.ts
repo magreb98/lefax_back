@@ -4,6 +4,7 @@ import { Document } from "./document";
 import { Class } from "./classe";
 import { EnseignementAssignment } from "./enseignement.assigment";
 import { GroupePartage } from "./groupe.partage";
+import { UserSearchPreference } from "./user.search.preference";
 
 
 export enum UserRole {
@@ -96,6 +97,9 @@ export class User {
 
     @OneToMany(() => EnseignementAssignment, assignment => assignment.enseignant)
     enseignements!: EnseignementAssignment[];
+
+    @OneToMany(() => UserSearchPreference, pref => pref.user)
+    searchPreferences?: UserSearchPreference[];
 
     @OneToMany(() => Ecole, ecole => ecole.schoolAdmin)
     ecoles!: Ecole[];
