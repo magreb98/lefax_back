@@ -78,4 +78,21 @@ export class CategoryController {
             res.status(500).json({ message: 'Erreur lors de la récupération de la catégorie' });
         }
     }
+
+    async getCategoriesByGroup(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId } = req.params;
+            const categories = await this.categoryRepository.find({
+                where: [
+                    { groupePartage: { id: groupeId } },
+                    { isGlobal: true }
+                ],
+                order: { categorieName: 'ASC' }
+            });
+            res.json(categories);
+        } catch (error) {
+            console.error('Erreur lors de la récupération des catégories pour le groupe :', error);
+            res.status(500).json({ message: 'Erreur lors de la récupération des catégories' });
+        }
+    }
 }

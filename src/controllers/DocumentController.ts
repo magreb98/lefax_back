@@ -242,13 +242,24 @@ export class DocumentController {
                 });
             }
 
-            // Récupérer uniquement les documents accessibles par l'utilisateur
-            // (basés sur ses groupes de partage)
-            const documents = await this.documentService.getDocumentsByUser(req.userId);
+            const { groupeId, categorieId, search } = req.query;
+            const page = parseInt(req.query.page as string) || 1;
+            const limit = parseInt(req.query.limit as string) || 20;
+
+            // Récupérer les documents avec filtres et pagination
+            const { documents, total } = await this.documentService.getDocumentsWithFilter(req.userId, {
+                groupeId: groupeId as string,
+                categorieId: categorieId as string,
+                page,
+                limit,
+                search: search as string
+            });
 
             res.status(200).json({
-                count: documents.length,
-                documents
+                documents,
+                total,
+                page,
+                totalPages: Math.ceil(total / limit)
             });
         } catch (error: any) {
             console.error('Erreur lors de la récupération des documents :', error);

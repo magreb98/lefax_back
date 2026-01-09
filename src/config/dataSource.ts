@@ -12,7 +12,7 @@ export const dataSourceOptions: DataSourceOptions = {
     database: process.env.DB_DATABASE || 'lefax',
     entities: ['src/entity/**/*.ts'],
     migrations: ['src/migrations/**/*.ts'],
-    synchronize: process.env.NODE_ENV !== 'production', // Désactivé en production
+    synchronize: process.env.NODE_ENV !== 'production',
     logging: process.env.NODE_ENV === 'development',
 };
 

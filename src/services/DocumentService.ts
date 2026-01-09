@@ -398,7 +398,10 @@ export class DocumentService {
      * Récupérer les documents accessibles par un utilisateur
      * (basé sur ses groupes de partage)
      */
-    async getDocumentsByUser(userId: string): Promise<Document[]> {
+    /**
+     * Helper: Récupérer tous les IDs des groupes auxquels l'utilisateur a accès
+     */
+    private async getUserAllowedGroupIds(userId: string): Promise<string[]> {
         const user = await this.userRepository.findOne({
             where: { id: userId },
             relations: [
@@ -426,15 +429,10 @@ export class DocumentService {
             throw new Error('Utilisateur non trouvé');
         }
 
-        // Si SUPERADMIN, retourner tous les documents
         if (user.role === UserRole.SUPERADMIN) {
-            return await this.documentRepository.find({
-                relations: ['categorie', 'addedBy', 'matiere', 'groupesPartage'],
-                order: { createdAt: 'DESC' }
-            });
+            return []; // Special case handle by caller
         }
 
-        // Récupérer tous les IDs des groupes auxquels l'utilisateur a accès
         const groupeIds: string[] = [];
 
         // 1. Groupes liés à l'administration d'écoles (Si ADMIN)
@@ -496,7 +494,110 @@ export class DocumentService {
         groupeIds.push(publicGroupe.id);
 
         // Supprimer les doublons
-        const uniqueGroupeIds = [...new Set(groupeIds)];
+        return [...new Set(groupeIds)];
+    }
+
+    /**
+     * Récupérer les documents accessibles par un utilisateur avec filtres et pagination
+     */
+    async getDocumentsWithFilter(
+        userId: string,
+        filters: {
+            groupeId?: string;
+            categorieId?: string;
+            page?: number;
+            limit?: number;
+            search?: string;
+        }
+    ): Promise<{ documents: Document[]; total: number }> {
+        const { groupeId, categorieId, page = 1, limit = 20, search } = filters;
+        const skip = (page - 1) * limit;
+
+        // Vérifier les droits d'accès
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) throw new Error('Utilisateur non trouvé');
+
+        let allowedGroupIds: string[] = [];
+        const isSuperAdmin = user.role === UserRole.SUPERADMIN;
+
+        if (!isSuperAdmin) {
+            allowedGroupIds = await this.getUserAllowedGroupIds(userId);
+
+            // Si un groupe spécifique est demandé, vérifier l'accès
+            if (groupeId) {
+                if (!allowedGroupIds.includes(groupeId)) {
+                    throw new Error('Accès non autorisé à ce groupe');
+                }
+                // Si accès autorisé, on filtre uniquement sur ce groupe
+                allowedGroupIds = [groupeId];
+            }
+        } else if (groupeId) {
+            // Pour SUPERADMIN, on respecte juste le filtre si fourni
+            allowedGroupIds = [groupeId];
+        }
+
+        // Construire la requête
+        const query = this.documentRepository.createQueryBuilder('document')
+            .leftJoinAndSelect('document.categorie', 'categorie')
+            .leftJoinAndSelect('document.addedBy', 'addedBy')
+            .leftJoinAndSelect('document.matiere', 'matiere')
+            .leftJoinAndSelect('document.groupesPartage', 'groupesPartage');
+
+        // Apply Access Control Filter
+        if (!isSuperAdmin || (isSuperAdmin && groupeId)) {
+            query.innerJoin(
+                'document.groupesPartage',
+                'accessGroup',
+                'accessGroup.id IN (:...allowedIds)',
+                { allowedIds: allowedGroupIds }
+            );
+        }
+
+        // Apply Category Filter
+        if (categorieId) {
+            query.andWhere('categorie.id = :categorieId', { categorieId });
+        }
+
+        // Apply Search Filter
+        if (search) {
+            query.andWhere(
+                '(document.documentName LIKE :search OR document.description LIKE :search)',
+                { search: `%${search}%` }
+            );
+        }
+
+        // Ordre et Pagination
+        query.orderBy('document.createdAt', 'DESC')
+            .skip(skip)
+            .take(limit);
+
+        const [documents, total] = await query.getManyAndCount();
+
+        return { documents, total };
+    }
+
+    /**
+     * Récupérer les documents accessibles par un utilisateur
+     * (basé sur ses groupes de partage)
+     */
+    async getDocumentsByUser(userId: string): Promise<Document[]> {
+        const user = await this.userRepository.findOne({
+            where: { id: userId }
+        });
+
+        if (!user) {
+            throw new Error('Utilisateur non trouvé');
+        }
+
+        // Si SUPERADMIN, retourner tous les documents
+        if (user.role === UserRole.SUPERADMIN) {
+            return await this.documentRepository.find({
+                relations: ['categorie', 'addedBy', 'matiere', 'groupesPartage'],
+                order: { createdAt: 'DESC' }
+            });
+        }
+
+        const allowedGroupIds = await this.getUserAllowedGroupIds(userId);
 
         // Récupérer tous les documents de ces groupes
         return await this.documentRepository
@@ -505,7 +606,7 @@ export class DocumentService {
             .leftJoinAndSelect('document.addedBy', 'addedBy')
             .leftJoinAndSelect('document.matiere', 'matiere')
             .leftJoinAndSelect('document.groupesPartage', 'groupesPartage')
-            .where('groupesPartage.id IN (:...groupeIds)', { groupeIds: uniqueGroupeIds })
+            .where('groupesPartage.id IN (:...groupeIds)', { groupeIds: allowedGroupIds })
             .orderBy('document.createdAt', 'DESC')
             .getMany();
     }

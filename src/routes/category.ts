@@ -65,4 +65,12 @@ router.put("/:id", authMiddleware, requireAdmin, categoryController.updateCatego
  */
 router.get("/:id", authMiddleware, categoryController.getCategoryById.bind(categoryController));
 
+/**
+ * GET /api/category/group/:groupeId
+ * Récupérer les catégories d'un groupe spécifique
+ * Params:
+ * - groupeId: string (requis) - ID du groupe
+ */
+router.get("/group/:groupeId", authMiddleware, categoryController.getCategoriesByGroup.bind(categoryController));
+
 export default router;

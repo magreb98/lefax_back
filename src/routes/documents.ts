@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { DocumentController } from '../controllers/DocumentController';
 import { authMiddleware, authMiddlewareWithQueryToken, requireRole } from '../middleware/auth';
 import { upload } from '../middleware/upload';
+import { UserRole } from '../entity/user';
 
 const router = Router();
 const documentController = new DocumentController();
@@ -51,7 +52,7 @@ const documentController = new DocumentController();
  *       400:
  *         description: Données invalides
  */
-router.post('/upload', authMiddleware, upload.single('file'), (req, res) => documentController.uploadDocument(req, res));
+router.post('/upload', authMiddleware, requireRole(UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.ENSEIGNANT), upload.single('file'), (req, res) => documentController.uploadDocument(req, res));
 
 /**
  * POST /api/documents/upload-multiple
@@ -64,7 +65,7 @@ router.post('/upload', authMiddleware, upload.single('file'), (req, res) => docu
  * - groupePartageIds: string[] (optionnel, si non fourni -> groupe public)
  * - isdownloadable: boolean (optionnel, défaut: true)
  */
-router.post('/upload-multiple', authMiddleware, upload.array('files', 20), (req, res) => documentController.uploadMultipleDocuments(req, res));
+router.post('/upload-multiple', authMiddleware, requireRole(UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.ENSEIGNANT), upload.array('files', 20), (req, res) => documentController.uploadMultipleDocuments(req, res));
 
 /**
  * GET /api/documents/:id/view

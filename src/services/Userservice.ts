@@ -261,7 +261,7 @@ export class UserService {
 
         await this.userRepository.save(user);
         await this.userRepository.save(user);
-        // await this.groupePartageService.syncClasseGroupePartage(classeId);
+        await this.groupePartageService.syncClasseGroupePartage(classeId);
         asyncJobService.emit(AsyncJobType.USER_JOINED_CLASS, { userId, classeId });
 
         return user;

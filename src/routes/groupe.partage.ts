@@ -27,6 +27,7 @@ router.get('/',
  */
 router.post('/custom/create',
     authMiddleware,
+    requireTeacher,
     (req, res) => groupePartageController.createCustomGroupe(req, res)
 );
 
