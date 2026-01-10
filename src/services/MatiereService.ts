@@ -4,6 +4,7 @@ import { Class } from '../entity/classe';
 import { GroupePartage, GroupePartageType } from '../entity/groupe.partage';
 import { User, UserRole } from '../entity/user';
 import { GroupePartageService } from './GroupePartageService';
+import { EnseignementAssignment } from '../entity/enseignement.assigment';
 
 export class MatiereService {
     private matiereRepository = AppDataSource.getRepository(Matiere);
@@ -196,5 +197,101 @@ export class MatiereService {
         return await queryBuilder
             .orderBy('matiere.matiereName', 'ASC')
             .getMany();
+    }
+
+    /**
+     * Assigner un enseignant à une matière
+     */
+    async addTeacherToMatiere(matiereId: string, teacherId: string): Promise<void> {
+        console.log(`Adding teacher ${teacherId} to matiere ${matiereId}`);
+        const matiere = await this.matiereRepository.findOne({
+            where: { id: matiereId },
+            relations: ['classe', 'classe.filiere', 'classe.filiere.school']
+        });
+
+        if (!matiere) {
+            console.error(`Matiere ${matiereId} not found`);
+            throw new Error('Matière non trouvée');
+        }
+
+        const userRepository = AppDataSource.getRepository(User);
+        const teacher = await userRepository.findOne({ where: { id: teacherId }, relations: ['school'] });
+
+        if (!teacher) {
+            console.error(`Teacher ${teacherId} not found`);
+            throw new Error('Enseignant non trouvé');
+        }
+        if (teacher.role !== UserRole.ENSEIGNANT) {
+            console.error(`User ${teacherId} is not a teacher, role is ${teacher.role}`);
+            throw new Error("L'utilisateur n'est pas un enseignant");
+        }
+
+        const EnseignementRepository = AppDataSource.getRepository(EnseignementAssignment);
+
+        // Vérifier si l'assignation existe déjà
+        const existingAssignment = await EnseignementRepository.findOne({
+            where: {
+                enseignant: { id: teacherId },
+                matiere: { id: matiereId },
+                isActive: true
+            }
+        });
+
+        if (existingAssignment) {
+            console.warn(`Assignment already exists for teacher ${teacherId} and matiere ${matiereId}`);
+            throw new Error("L'enseignant est déjà assigné à cette matière");
+        }
+
+        const school = teacher.school || matiere.classe.filiere?.school;
+        if (!school) {
+            console.error(`No school found for assignment. Teacher school: ${teacher.school?.id}, Matiere school: ${matiere.classe.filiere?.school?.id}`);
+            throw new Error("Impossible de déterminer l'école pour l'assignation");
+        }
+
+        // Créer l'assignation
+        const assignment = EnseignementRepository.create({
+            enseignant: teacher,
+            ecole: school,
+            classe: matiere.classe,
+            matiere: matiere,
+            isActive: true
+        });
+
+        try {
+            const savedAssignment = await EnseignementRepository.save(assignment);
+            console.log(`Assignment created with ID: ${savedAssignment.id}`);
+
+            // Synchroniser les permissions
+            await this.groupePartageService.syncAfterEnseignementAssignment(savedAssignment.id);
+        } catch (error) {
+            console.error("Error saving assignment or syncing:", error);
+            throw error;
+        }
+    }
+
+    /**
+     * Retirer un enseignant d'une matière
+     */
+    async removeTeacherFromMatiere(matiereId: string, teacherId: string): Promise<void> {
+        const EnseignementRepository = AppDataSource.getRepository('EnseignementAssignment' as any);
+
+        const assignment = await EnseignementRepository.findOne({
+            where: {
+                enseignant: { id: teacherId },
+                matiere: { id: matiereId },
+                isActive: true
+            }
+        });
+
+        if (!assignment) {
+            throw new Error("L'assignation n'existe pas ou est déjà inactive");
+        }
+
+        await EnseignementRepository.remove(assignment);
+
+        // Synchroniser les permissions (le retrait de l'enseignant du groupe se fait via la synchro)
+        // Note: syncAfterEnseignementAssignment requiert un ID d'assignment, or on vient de le supprimer.
+        // On doit appeler syncMatiereGroupePartage directement.
+        await this.groupePartageService.syncMatiereGroupePartage(matiereId);
     }
 }

@@ -30,6 +30,26 @@ router.get("/", authMiddleware, (req, res) => matiereController.getMatieres(req,
 
 /**
  * @swagger
+ * /api/matieres/class/{classId}:
+ *   get:
+ *     tags:
+ *       - Matieres
+ *     summary: Récupérer les matières d'une classe
+ *     parameters:
+ *       - in: path
+ *         name: classId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID de la classe
+ *     responses:
+ *       200:
+ *         description: Liste des matières de la classe
+ */
+router.get("/class/:classId", authMiddleware, (req, res) => matiereController.getMatieresByClass(req, res));
+
+/**
+ * @swagger
  * /api/matieres/{id}:
  *   get:
  *     tags:
@@ -144,5 +164,61 @@ router.put("/:id", authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('mat
  *         description: Matière non trouvée
  */
 router.delete("/:id", authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('matiere'), (req, res) => matiereController.deleteMatiere(req, res));
+
+/**
+ * @swagger
+ * /api/matieres/{id}/teachers:
+ *   post:
+ *     tags:
+ *       - Matieres
+ *     summary: Assigner un enseignant à une matière
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               teacherId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Enseignant assigné
+ *       400:
+ *         description: Erreur ou enseignant déjà assigné
+ */
+router.post("/:id/teachers", authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('matiere'), (req, res) => matiereController.addTeacher(req, res));
+
+/**
+ * @swagger
+ * /api/matieres/{id}/teachers/{teacherId}:
+ *   delete:
+ *     tags:
+ *       - Matieres
+ *     summary: Retirer un enseignant d'une matière
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: teacherId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Enseignant retiré
+ *       400:
+ *         description: Erreur
+ */
+router.delete("/:id/teachers/:teacherId", authMiddleware, requireSchoolAdmin, requireOwnSchoolOnly('matiere'), (req, res) => matiereController.removeTeacher(req, res));
 
 export default router;

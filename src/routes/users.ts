@@ -159,6 +159,13 @@ router.post('/groupes/sync/enseignement/:enseignementId', authMiddleware, (req, 
  * GET /api/users/school/:schoolId/teachers
  * Récupérer tous les enseignants d'une école
  */
+
+/**
+ * GET /api/users/my-school/teachers
+ * Récupérer tous les enseignants de l'école de l'admin connecté
+ */
+router.get('/my-school/teachers', authMiddleware, requireAdmin, (req, res) => userController.getMySchoolTeachers(req, res));
+
 router.get('/school/:schoolId/teachers', authMiddleware, requireAdmin, (req, res) => userController.getTeachersBySchool(req, res));
 /**
  * POST /api/users/teachers/add-to-school

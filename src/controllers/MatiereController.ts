@@ -5,13 +5,56 @@ import { Class } from "../entity/classe";
 import { Document } from "../entity/document";
 import { GroupePartageService } from "../services/GroupePartageService";
 import { UserRole } from "../entity/user";
+import { MatiereService } from '../services/MatiereService';
 
 export class MatiereController {
 
     private matiereRepository = AppDataSource.getRepository(Matiere);
     private classeRepository = AppDataSource.getRepository(Class);
     private groupePartageService = new GroupePartageService();
+    private matiereService = new MatiereService();
 
+
+
+    /**
+     * Assigner un enseignant à une matière
+     * POST /api/matieres/:id/teachers
+     */
+    async addTeacher(req: Request, res: Response): Promise<void> {
+        try {
+            const { id } = req.params;
+            const { teacherId } = req.body;
+
+            if (!teacherId) {
+                res.status(400).json({ message: 'TeacherId est requis' });
+                return;
+            }
+
+            await this.matiereService.addTeacherToMatiere(id, teacherId);
+
+            res.status(200).json({ message: 'Enseignant assigné avec succès' });
+        } catch (error: any) {
+            console.error('Erreur assignation enseignant:', error);
+            res.status(400).json({ message: error.message || 'Erreur lors de l\'assignation' });
+        }
+    }
+
+    /**
+     * Retirer un enseignant d'une matière
+     * DELETE /api/matieres/:id/teachers/:teacherId
+     */
+    async removeTeacher(req: Request, res: Response): Promise<void> {
+        try {
+            const { id, teacherId } = req.params;
+
+            await this.matiereService.removeTeacherFromMatiere(id, teacherId);
+
+            res.status(200).json({ message: 'Enseignant retiré avec succès' });
+        } catch (error: any) {
+            console.error('Erreur retrait enseignant:', error);
+            res.status(400).json({ message: error.message || 'Erreur lors du retrait' });
+        }
+    }
     /**
      * Récupérer toutes les matières avec filtrage optionnel
      * GET /api/matieres
@@ -59,6 +102,30 @@ export class MatiereController {
         } catch (error) {
             console.error('Erreur lors de la récupération des matières:', error);
             res.status(500).json({ message: 'Erreur lors de la récupération des matières' });
+        }
+    }
+
+    /**
+     * Récupérer les matières d'une classe spécifique
+     * GET /api/matieres/class/:classId
+     */
+    async getMatieresByClass(req: Request, res: Response): Promise<void> {
+        try {
+            const { classId } = req.params;
+
+            const matieres = await this.matiereRepository.find({
+                where: { classe: { id: classId } },
+                relations: ['classe', 'enseignementAssignments', 'enseignementAssignments.enseignant', 'groupePartage'],
+                order: { createdAt: 'DESC' }
+            });
+
+            res.status(200).json({
+                count: matieres.length,
+                matieres
+            });
+        } catch (error) {
+            console.error('Erreur lors de la récupération des matières de la classe:', error);
+            res.status(500).json({ message: 'Erreur lors de la récupération des matières de la classe' });
         }
     }
 

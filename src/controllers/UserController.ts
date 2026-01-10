@@ -613,6 +613,42 @@ export class UserController {
   }
 
   /**
+   * Récupérer tous les enseignants de l'école de l'administrateur connecté
+   * GET /api/users/my-school/teachers
+   */
+  async getMySchoolTeachers(req: Request, res: Response): Promise<void> {
+    try {
+      const user = (req as any).user;
+
+      // Vérification de sécurité supplémentaire
+      if (!user || user.role !== UserRole.ADMIN || !user.school || !user.school.id) {
+        res.status(403).json({ message: "Action non autorisée ou vous n'êtes associé à aucune école." });
+        return;
+      }
+
+      const schoolId = user.school.id;
+      const teachers = await this.userService.getTeachersBySchool(schoolId);
+
+      res.json({
+        count: teachers.length,
+        teachers: teachers.map(t => ({
+          id: t.id,
+          firstName: t.firstName,
+          lastName: t.lastName,
+          email: t.email,
+          phoneNumber: t.phoneNumber,
+          createdAt: t.createdAt
+        }))
+      });
+    } catch (error: any) {
+      console.error('Erreur lors de la récupération des enseignants de mon école:', error);
+      res.status(500).json({
+        message: 'Erreur lors de la récupération des enseignants'
+      });
+    }
+  }
+
+  /**
    * Ajouter un enseignant � une �cole
    */
   async addTeacherToSchool(req: Request, res: Response): Promise<void> {
