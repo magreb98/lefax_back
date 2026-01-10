@@ -87,53 +87,43 @@ export class GroupePartageService {
         }
 
         // 4. CAS GÉNÉRAL (Admin, Enseignant, Etudiant)
-        // On construit une liste de conditions OR
-        // Tout utilisateur voit :
-        // - Les groupes dont il est propriétaire
-        // - Les groupes dont il est membre
+        // On récupère les préférences ici si c'est un étudiant pour éviter l'async dans Brackets
+        let enabledGroupeIds: string[] = [];
+        if (user.role === UserRole.ETUDIANT || user.role === 'etudiant') {
+            enabledGroupeIds = await this.userSearchPreferenceService.getEnabledGroupeIds(userId);
+        }
 
         qb.where(new Brackets((subQb) => {
-            // Condition 1: Propriétaire
-            subQb.where('owner.id = :userId', { userId })
-                // Condition 2: Membre
-                .orWhere('users.id = :userId', { userId });
-
-            // SI ADMIN : voit aussi les groupes de ses écoles
-            if (user.role === UserRole.ADMIN || user.role === 'admin') {
-                let schoolIds: string[] = [];
-
-                if (user.ecoles && user.ecoles.length > 0) {
-                    schoolIds.push(...user.ecoles.map((e: any) => e.id));
-                }
-                if (user.school && user.school.id) {
-                    schoolIds.push(user.school.id);
-                }
-                schoolIds = [...new Set(schoolIds)];
-
-                if (schoolIds.length > 0) {
-                    subQb.orWhere('ecole.id IN (:...schoolIds)', { schoolIds })
-                        .orWhere('filiereSchool.id IN (:...schoolIds)', { schoolIds })
-                        .orWhere('classeFiliereSchool.id IN (:...schoolIds)', { schoolIds })
-                        .orWhere('matiereSchool.id IN (:...schoolIds)', { schoolIds });
+            // CAS ÉTUDIANT : Voit uniquement ses propres groupes ET les groupes activés dans ses préférences
+            if (user.role === UserRole.ETUDIANT || user.role === 'etudiant') {
+                subQb.where('owner.id = :userId', { userId });
+                if (enabledGroupeIds.length > 0) {
+                    subQb.orWhere('groupe.id IN (:...enabledGroupeIds)', { enabledGroupeIds });
                 }
             }
+            // AUTRES CAS (Admin, Enseignant, etc.)
+            else {
+                // Condition 1: Propriétaire ou Membre
+                subQb.where('owner.id = :userId', { userId })
+                    .orWhere('users.id = :userId', { userId });
 
-            // 5. CAS ÉTUDIANT : voit aussi les groupes de sa classe, filière, école
-            if (user.role === UserRole.ETUDIANT || user.role === 'etudiant') {
-                if (user.classe) {
-                    subQb.orWhere('classe.id = :classeId', { classeId: user.classe.id });
-
-                    if (user.classe.filiere) {
-                        subQb.orWhere('filiere.id = :filiereId', { filiereId: user.classe.filiere.id });
+                // SI ADMIN : voit aussi les groupes de ses écoles
+                if (user.role === UserRole.ADMIN || user.role === 'admin') {
+                    let schoolIds: string[] = [];
+                    if (user.ecoles && user.ecoles.length > 0) {
+                        schoolIds.push(...user.ecoles.map((e: any) => e.id));
                     }
-                }
+                    if (user.school && user.school.id) {
+                        schoolIds.push(user.school.id);
+                    }
+                    schoolIds = [...new Set(schoolIds)];
 
-                if (user.school) {
-                    const schoolId = user.school.id;
-                    subQb.orWhere('ecole.id = :schoolId', { schoolId })
-                        .orWhere('filiereSchool.id = :schoolId', { schoolId })
-                        .orWhere('classeFiliereSchool.id = :schoolId', { schoolId })
-                        .orWhere('matiereSchool.id = :schoolId', { schoolId });
+                    if (schoolIds.length > 0) {
+                        subQb.orWhere('ecole.id IN (:...schoolIds)', { schoolIds })
+                            .orWhere('filiereSchool.id IN (:...schoolIds)', { schoolIds })
+                            .orWhere('classeFiliereSchool.id IN (:...schoolIds)', { schoolIds })
+                            .orWhere('matiereSchool.id IN (:...schoolIds)', { schoolIds });
+                    }
                 }
             }
         }));
@@ -1106,8 +1096,9 @@ export class GroupePartageService {
                 // Créer les préférences de recherche par défaut pour les étudiants
                 if (updatedUser.role === UserRole.ETUDIANT) {
                     try {
-                        await this.userSearchPreferenceService.createDefaultPreferences(updatedUser.id, contextualClasse.id);
-                        console.log(`[JoinByInvitation] Search preferences created for student ${updatedUser.id}`);
+                        // Utiliser l'ID du groupe réellement rejoint (groupe.id) au lieu de la classe
+                        await this.userSearchPreferenceService.createDefaultPreferences(updatedUser.id, groupe.id);
+                        console.log(`[JoinByInvitation] Search preferences created for student ${updatedUser.id} (Default: ${groupe.groupeName})`);
                     } catch (prefError: any) {
                         console.error(`[JoinByInvitation] Failed to create search preferences:`, prefError.message);
                     }

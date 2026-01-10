@@ -22,8 +22,8 @@ export class UserSearchPreferenceService {
      * @param classeId - ID de la classe
      * @throws Error si l'utilisateur n'est pas un étudiant ou si la classe n'existe pas
      */
-    async createDefaultPreferences(userId: string, classeId: string): Promise<void> {
-        console.log(`[SearchPreference] Creating default preferences for user ${userId} in class ${classeId}`);
+    async createDefaultPreferences(userId: string, targetGroupeId: string): Promise<void> {
+        console.log(`[SearchPreference] Creating default preferences for user ${userId} with target groupe ${targetGroupeId}`);
 
         const user = await this.userRepository.findOne({ where: { id: userId } });
         if (!user) {
@@ -35,13 +35,10 @@ export class UserSearchPreferenceService {
             return;
         }
 
-        const classe = await this.classRepository.findOne({
-            where: { id: classeId },
-            relations: ['groupePartage']
-        });
-
-        if (!classe || !classe.groupePartage) {
-            throw new Error('Classe ou groupe de classe introuvable');
+        const targetGroupe = await this.groupePartageRepository.findOne({ where: { id: targetGroupeId } });
+        if (!targetGroupe) {
+            console.warn(`[SearchPreference] Groupe ${targetGroupeId} not found, cannot create default preference`);
+            return;
         }
 
         // Vérifier si des préférences existent déjà
@@ -50,21 +47,54 @@ export class UserSearchPreferenceService {
         });
 
         if (existingPrefs.length > 0) {
-            console.log(`[SearchPreference] Preferences already exist for user ${userId}, skipping`);
+            console.log(`[SearchPreference] Preferences already exist for user ${userId}, skipping creation`);
             return;
         }
 
-        // Créer la préférence par défaut : Groupe de la classe activé
-        const defaultPref = this.preferenceRepository.create({
-            user,
-            groupePartage: classe.groupePartage,
-            isEnabled: true,
-            isDefault: true,
-            displayOrder: 1
-        });
+        // Récupérer tous les groupes de la hiérarchie de l'école
+        const availableGroupes = await this.getAvailableGroupes(userId);
+        console.log(`[SearchPreference] Found ${availableGroupes.length} available groups for initialization`);
 
-        await this.preferenceRepository.save(defaultPref);
-        console.log(`✅ [SearchPreference] Default preferences created for student ${userId} (Class: ${classe.className})`);
+        // Créer les préférences pour TOUS les groupes disponibles
+        const newPreferences: UserSearchPreference[] = [];
+
+        for (const groupe of availableGroupes) {
+            const isTargetGroup = groupe.id === targetGroupeId;
+
+            // Si c'est le groupe cible : Activé et Défaut
+            // Sinon : Désactivé et Pas défaut
+            const isEnabled = isTargetGroup;
+            const isDefault = isTargetGroup;
+            const displayOrder = isTargetGroup ? 1 : 99;
+
+            const pref = this.preferenceRepository.create({
+                user,
+                groupePartage: groupe,
+                isEnabled,
+                isDefault,
+                displayOrder
+            });
+
+            newPreferences.push(pref);
+        }
+
+        // Si le groupe cible n'était pas dans availableGroupes (cas rare/erreur sync), on l'ajoute quand même
+        if (!newPreferences.some(p => p.groupePartage.id === targetGroupeId)) {
+            console.warn(`[SearchPreference] Target group ${targetGroupeId} was not in available groups, forcing addition`);
+            const pref = this.preferenceRepository.create({
+                user,
+                groupePartage: targetGroupe,
+                isEnabled: true,
+                isDefault: true,
+                displayOrder: 1
+            });
+            newPreferences.push(pref);
+        }
+
+        if (newPreferences.length > 0) {
+            await this.preferenceRepository.save(newPreferences);
+            console.log(`✅ [SearchPreference] Created ${newPreferences.length} preferences for student ${userId}`);
+        }
     }
 
     /**
@@ -118,50 +148,35 @@ export class UserSearchPreferenceService {
     async getAvailableGroupes(userId: string): Promise<GroupePartage[]> {
         const user = await this.userRepository.findOne({
             where: { id: userId },
-            relations: [
-                'classe',
-                'classe.groupePartage',
-                'classe.matieres',
-                'classe.matieres.groupePartage',
-                'classe.filiere',
-                'classe.filiere.groupePartage',
-                'classe.filiere.school',
-                'classe.filiere.school.groupePartage'
-            ]
+            relations: ['school', 'classe']
         });
 
-        if (!user || !user.classe) {
-            console.log(`[SearchPreference] User ${userId} has no class, returning empty list`);
+        if (!user || !user.school) {
+            console.log(`[SearchPreference] User ${userId} has no school, returning empty list`);
             return [];
         }
 
-        const groupes: GroupePartage[] = [];
+        const schoolId = user.school.id;
 
-        // Groupe de la classe
-        if (user.classe.groupePartage) {
-            groupes.push(user.classe.groupePartage);
-        }
+        // On récupère TOUS les groupes de l'école (hiérarchie complète)
+        const groupes = await this.groupePartageRepository.createQueryBuilder('groupe')
+            .leftJoin('groupe.ecole', 'ecole')
+            .leftJoin('groupe.filiere', 'filiere')
+            .leftJoin('filiere.school', 'filiereSchool')
+            .leftJoin('groupe.classe', 'classe')
+            .leftJoin('classe.filiere', 'classeFiliere')
+            .leftJoin('classeFiliere.school', 'classeFiliereSchool')
+            .leftJoin('groupe.matiere', 'matiere')
+            .leftJoin('matiere.classe', 'matiereClasse')
+            .leftJoin('matiereClasse.filiere', 'matiereFiliere')
+            .leftJoin('matiereFiliere.school', 'matiereSchool')
+            .where('ecole.id = :schoolId', { schoolId })
+            .orWhere('filiereSchool.id = :schoolId', { schoolId })
+            .orWhere('classeFiliereSchool.id = :schoolId', { schoolId })
+            .orWhere('matiereSchool.id = :schoolId', { schoolId })
+            .getMany();
 
-        // Groupes des matières
-        if (user.classe.matieres) {
-            user.classe.matieres.forEach((matiere: any) => {
-                if (matiere.groupePartage) {
-                    groupes.push(matiere.groupePartage);
-                }
-            });
-        }
-
-        // Groupe de la filière
-        if (user.classe.filiere?.groupePartage) {
-            groupes.push(user.classe.filiere.groupePartage);
-        }
-
-        // Groupe de l'école
-        if (user.classe.filiere?.school?.groupePartage) {
-            groupes.push(user.classe.filiere.school.groupePartage);
-        }
-
-        console.log(`[SearchPreference] User ${userId} has ${groupes.length} available groups`);
+        console.log(`[SearchPreference] Found ${groupes.length} school-wide groups available for user ${userId}`);
         return groupes;
     }
 
@@ -239,14 +254,24 @@ export class UserSearchPreferenceService {
         // Récréer les préférences par défaut
         const user = await this.userRepository.findOne({
             where: { id: userId },
-            relations: ['classe']
+            relations: ['classe', 'school', 'classe.filiere', 'classe.filiere.school']
         });
 
-        if (user && user.classe) {
-            await this.createDefaultPreferences(userId, user.classe.id);
+        if (user && user.school) {
+            // Pour le reset, on ne sait pas quel était son groupe "original"
+            // Donc par défaut on active le groupe de sa classe s'il existe
+            if (user.classe) {
+                const classe = await this.classRepository.findOne({
+                    where: { id: user.classe.id },
+                    relations: ['groupePartage']
+                });
+                if (classe?.groupePartage) {
+                    await this.createDefaultPreferences(userId, classe.groupePartage.id);
+                }
+            }
             console.log(`✅ [SearchPreference] Preferences reset to defaults for user ${userId}`);
         } else {
-            console.warn(`[SearchPreference] User ${userId} has no class, cannot reset preferences`);
+            console.warn(`[SearchPreference] User ${userId} has no school, cannot reset preferences`);
         }
     }
 
