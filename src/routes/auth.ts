@@ -230,4 +230,23 @@ router.post('/forgot-password', authController.forgotPassword.bind(authControlle
  */
 router.post('/reset-password/:token', authController.resetPassword.bind(authController));
 
+/**
+ * @swagger
+ * /api/auth/impersonate/{userId}:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *       - GodMode
+ *     summary: Se connecter en tant qu'un autre utilisateur (SuperAdmin)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ */
+router.post('/impersonate/:userId', authMiddleware, authController.impersonateUser.bind(authController));
+
 export default router;

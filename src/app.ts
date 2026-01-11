@@ -12,12 +12,14 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimiter';
 // import { redisClient } from './config/redis'; // DISABLED
 import swaggerJsdoc from 'swagger-jsdoc';
+import { createServer } from 'http';
+import { socketService } from './services/SocketService';
 
 // Charger les variables d'environnement
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
-const app = express();
+const app = express(); // trigger restart
 
 // ===== CONFIGURATION SWAGGER =====
 import { swaggerOptions } from './config/swagger.config';
@@ -54,6 +56,20 @@ app.use(
 // Body parser
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Fingerprinting pour identifier les devices
+const Fingerprint = require('express-fingerprint');
+app.use(Fingerprint({
+  parameters: [
+    Fingerprint.useragent,
+    Fingerprint.acceptHeaders,
+    Fingerprint.geoip
+  ]
+}));
+
+// API Monitoring (doit être après fingerprint)
+import { apiMonitoringMiddleware } from './middleware/apiMonitoring';
+app.use(apiMonitoringMiddleware);
 
 // Logger HTTP
 app.use(requestLogger);
@@ -206,12 +222,21 @@ const initializeApp = async () => {
       logger.info('ℹ️ Aucun utilisateur à ajouter pour le moment.');
     }
 
-    // Démarrage du serveur
-    app.listen(PORT, () => {
-      logger.info(`🚀 Serveur démarré sur le port ${PORT}`);
+    // Démarrage du serveur HTTP (compatible Socket.io)
+    const httpServer = createServer(app);
+
+    httpServer.listen(PORT, async () => {
+      logger.info(`🚀 Serveur HTTP & Socket.io démarré sur le port ${PORT}`);
       logger.info(`📘 Documentation Swagger: http://localhost:${PORT}/api/docs`);
       logger.info(`🏥 Health check: http://localhost:${PORT}/health`);
       logger.info(`🌍 Environnement: ${process.env.NODE_ENV || 'development'}`);
+
+      // Initialiser le service Socket.io
+      socketService.initialize(httpServer);
+
+      // Démarrer le service de monitoring (émet stats toutes les 5s)
+      const { monitoringService } = await import('./services/MonitoringService');
+      monitoringService.start();
 
       // Log des routes principales pour debug
       logger.info('📍 Routes disponibles:');
@@ -240,14 +265,12 @@ process.on('uncaughtException', (error: Error) => {
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM reçu, arrêt gracieux...');
   await AppDataSource.destroy();
-  // await redisClient.quit(); // DISABLED
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT reçu, arrêt gracieux...');
   await AppDataSource.destroy();
-  // await redisClient.quit(); // DISABLED
   process.exit(0);
 });
 

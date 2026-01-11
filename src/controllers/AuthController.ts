@@ -9,6 +9,8 @@ import nodemailer from 'nodemailer';
 import { MoreThan } from 'typeorm';
 
 import { OAuth2Client } from 'google-auth-library';
+import { securityMonitoringService } from '../services/SecurityMonitoringService';
+import { authService } from '../services/AuthService';
 
 export class AuthController {
   private userRepository = AppDataSource.getRepository(User);
@@ -30,6 +32,15 @@ export class AuthController {
       console.log('Login attempt for email:', email);
 
       if (!user) {
+        // Enregistrer l'échec de login
+        securityMonitoringService.recordLoginFailure({
+          email,
+          ip: req.ip || req.socket.remoteAddress || 'unknown',
+          fingerprint: (req as any).fingerprint?.hash,
+          userAgent: req.get('user-agent') || 'unknown',
+          timestamp: new Date().toISOString(),
+          reason: 'User not found'
+        });
         return res.status(401).json({ message: 'Identifiants invalides' });
       }
 
@@ -39,6 +50,16 @@ export class AuthController {
 
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
+        // Enregistrer l'échec de login
+        securityMonitoringService.recordLoginFailure({
+          userId: user.id,
+          email,
+          ip: req.ip || req.socket.remoteAddress || 'unknown',
+          fingerprint: (req as any).fingerprint?.hash,
+          userAgent: req.get('user-agent') || 'unknown',
+          timestamp: new Date().toISOString(),
+          reason: 'Invalid password'
+        });
         return res.status(401).json({ message: 'Identifiants invalides' });
       }
 
@@ -57,6 +78,10 @@ export class AuthController {
         userSchool = user.ecoles[0];
       }
 
+      // Mettre à jour la date de dernière connexion
+      user.lastLogin = new Date();
+      await this.userRepository.save(user);
+
       // Retourner le token et les informations utilisateur (sans le mot de passe)
       const userResponse = {
         id: user.id,
@@ -71,6 +96,18 @@ export class AuthController {
         classe: user.classe
       };
 
+      // Enregistrer la connexion réussie dans l'audit log
+      securityMonitoringService.recordAuditLog({
+        userId: user.id,
+        userName: `${user.firstName} ${user.lastName}`,
+        action: 'LOGIN',
+        resource: 'auth',
+        ip: req.ip || req.socket.remoteAddress || 'unknown',
+        fingerprint: (req as any).fingerprint?.hash,
+        userAgent: req.get('user-agent') || 'unknown',
+        timestamp: new Date().toISOString()
+      });
+
       return res.json({
         user: userResponse,
         token
@@ -82,10 +119,98 @@ export class AuthController {
 
   async logout(req: Request, res: Response) {
     try {
+      const userId = (req as any).user?.id;
+
+      if (userId) {
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (user) {
+          securityMonitoringService.recordAuditLog({
+            userId: user.id,
+            userName: `${user.firstName} ${user.lastName}`,
+            action: 'LOGOUT',
+            resource: 'auth',
+            ip: req.ip || req.socket.remoteAddress || 'unknown',
+            fingerprint: (req as any).fingerprint?.hash,
+            userAgent: req.get('user-agent') || 'unknown',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
 
       return res.json({ message: 'Déconnexion réussie' });
     } catch (error) {
       return res.status(500).json({ message: 'Erreur lors de la déconnexion', error });
+    }
+  }
+
+  /**
+   * Permet à un SuperAdmin de se connecter en tant qu'un autre utilisateur
+   */
+  async impersonateUser(req: Request, res: Response) {
+    try {
+      const currentUserId = (req as any).user?.id;
+
+      // Vérification double sécurité (normalement déjà géré par middleware)
+      const admin = await this.userRepository.findOne({ where: { id: currentUserId } });
+      if (admin?.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Accès refusé' });
+      }
+
+      const targetUserId = req.params.userId;
+      const targetUser = await this.userRepository.findOne({
+        where: { id: targetUserId },
+        relations: ['school', 'classe', 'ecoles']
+      });
+
+      if (!targetUser) {
+        return res.status(404).json({ message: 'Utilisateur cible non trouvé' });
+      }
+
+      // Générer le token pour l'utilisateur cible
+      const { token } = authService.generateTokens(targetUser);
+
+      // Préparer la réponse utilisateur
+      let userSchool = targetUser.school;
+      if (targetUser.role === 'admin' && targetUser.ecoles && targetUser.ecoles.length > 0) {
+        userSchool = targetUser.ecoles[0];
+      }
+
+      const userResponse = {
+        id: targetUser.id,
+        name: `${targetUser.firstName} ${targetUser.lastName}`,
+        firstName: targetUser.firstName,
+        lastName: targetUser.lastName,
+        email: targetUser.email,
+        role: targetUser.role,
+        phone: targetUser.phoneNumber,
+        isActive: targetUser.isActive,
+        school: userSchool,
+        classe: targetUser.classe
+      };
+
+      // Logger l'action d'impersonation dans l'audit (Phase 4 legacy)
+      securityMonitoringService.recordAuditLog({
+        userId: currentUserId,
+        userName: `${admin.firstName} ${admin.lastName}`,
+        action: 'LOGIN', // Ou un type spécial IMPERSONATE
+        resource: 'user',
+        resourceId: targetUser.id,
+        details: { targetEmail: targetUser.email },
+        ip: req.ip || req.socket.remoteAddress || 'unknown',
+        fingerprint: (req as any).fingerprint?.hash,
+        userAgent: req.get('user-agent') || 'unknown',
+        timestamp: new Date().toISOString()
+      });
+
+      return res.json({
+        user: userResponse,
+        token,
+        message: `Connecté en tant que ${targetUser.email}`
+      });
+
+    } catch (error) {
+      console.error('Impersonation error:', error);
+      return res.status(500).json({ message: 'Erreur lors de l\'impersonation' });
     }
   }
 

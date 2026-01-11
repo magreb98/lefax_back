@@ -76,6 +76,9 @@ export class User {
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
     updatedAt!: Date;
 
+    @Column({ nullable: true, type: 'timestamp' })
+    lastLogin?: Date;
+
     @OneToMany(() => GroupePartage, groupePartage => groupePartage.owner)
     ownedGroupesPartage?: GroupePartage[];
 

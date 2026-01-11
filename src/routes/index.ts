@@ -11,6 +11,7 @@ import notificationRoutes from './notifications';
 import matiereRoutes from './matieres';
 import searchRoutes from './search';
 import userSearchPreferencesRoutes from './userSearchPreferences';
+import adminRouter from './admin';
 
 const router = Router();
 
@@ -39,7 +40,11 @@ router.use('/matieres', matiereRoutes);
 router.use('/search', searchRoutes);
 
 // Routes pour les préférences de recherche
+// Routes pour les préférences de recherche
 router.use('/users', userSearchPreferencesRoutes);
 
+// Routes Admin (Broadcast, etc.)
+// Routes Admin (Broadcast, etc.)
+router.use('/admin', adminRouter);
 
 export default router;
