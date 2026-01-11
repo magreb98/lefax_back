@@ -63,6 +63,14 @@ export class EcoleController {
                 UserRoleEnum: UserRole
             });
 
+            // Si l'utilisateur est un simple USER, il ne voit aucune école
+            if (user && (user.role === UserRole.USER || (user.role as string) === 'user')) {
+                return res.status(200).json({
+                    count: 0,
+                    ecoles: []
+                });
+            }
+
             let where: any = {};
 
             // Si l'utilisateur est un ADMIN, il ne voit que les écoles qu'il administre

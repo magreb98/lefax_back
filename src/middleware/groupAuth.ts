@@ -151,6 +151,11 @@ export const requirePublisherOrAdmin = async (req: AuthRequest, res: Response, n
             }
         }
 
+        // CAS SPÉCIAL: Les enseignants peuvent publier dans le groupe public
+        if (groupe.groupeName === 'public' && req.user.role === UserRole.ENSEIGNANT) {
+            return next();
+        }
+
         // Vérifier si l'utilisateur est dans la liste des allowedPublishers
         if (groupe.allowedPublishers && groupe.allowedPublishers.some(p => p.id === req.user!.id)) {
             return next();
@@ -236,6 +241,11 @@ export const canUserPublishToGroup = async (
                     return { canPublish: true };
                 }
             }
+        }
+
+        // CAS SPÉCIAL: Les enseignants peuvent publier dans le groupe public
+        if (groupe.groupeName === 'public' && user.role === UserRole.ENSEIGNANT) {
+            return { canPublish: true };
         }
 
         // Vérifier si l'utilisateur est dans la liste des allowedPublishers
