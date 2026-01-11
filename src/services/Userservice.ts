@@ -172,7 +172,7 @@ export class UserService {
     async getUserById(id: string): Promise<User | null> {
         return await this.userRepository.findOne({
             where: { id },
-            relations: ['school', 'classe', 'groupesPartage', 'enseignements', 'enseignements.matiere', 'enseignements.classe', 'ecoles', 'filiere', 'filiere.school']
+            relations: ['school', 'classe', 'classe.filiere', 'groupesPartage', 'enseignements', 'enseignements.matiere', 'enseignements.classe', 'ecoles']
         });
     }
 
