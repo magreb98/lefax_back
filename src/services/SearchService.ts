@@ -77,6 +77,42 @@ export class SearchService {
             }
 
             console.log(`[SearchService] Student ${userId} searching in ${accessibleGroupeIds.length} groups`);
+        } else if (user.role === UserRole.ENSEIGNANT) {
+            // ✅ NOUVEAU : Pour les enseignants, filtrer par classes/matières enseignées
+            console.log(`[SearchService] Using teaching assignments for teacher ${userId}`);
+
+            const { AppDataSource } = await import('../config/database');
+            const { EnseignementAssignment } = await import('../entity/enseignement.assigment');
+            const assignmentRepo = AppDataSource.getRepository(EnseignementAssignment);
+
+            const assignments = await assignmentRepo.find({
+                where: { enseignant: { id: userId }, isActive: true },
+                relations: ['classe', 'classe.groupePartage', 'matiere', 'matiere.groupePartage']
+            });
+
+            const groupeIds: string[] = [];
+
+            // Groupes de classes et matières enseignées
+            assignments.forEach(a => {
+                if (a.classe?.groupePartage?.id) groupeIds.push(a.classe.groupePartage.id);
+                if (a.matiere?.groupePartage?.id) groupeIds.push(a.matiere.groupePartage.id);
+            });
+
+            // Groupes personnalisés dont l'enseignant est membre
+            if (user.groupesPartage) {
+                user.groupesPartage.forEach(g => {
+                    if (!groupeIds.includes(g.id)) groupeIds.push(g.id);
+                });
+            }
+
+            // Groupe public
+            const publicGroupe = await this.documentService.getOrCreatePublicGroupe();
+            if (!groupeIds.includes(publicGroupe.id)) {
+                groupeIds.push(publicGroupe.id);
+            }
+
+            accessibleGroupeIds = [...new Set(groupeIds)];
+            console.log(`[SearchService] Teacher ${userId} searching in ${accessibleGroupeIds.length} groups`);
         } else {
             // Logique existante pour ADMIN, ENSEIGNANT, USER
             const groupeIds: string[] = [];

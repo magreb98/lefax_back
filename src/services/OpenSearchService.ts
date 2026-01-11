@@ -168,6 +168,7 @@ export class OpenSearchService {
                 groupName,
                 categoryName,
                 publicationYear,
+                contentStatus: 'pending', // Track content indexing status
                 suggest_name: [
                     { input: document.documentName, weight: 10 },
                     { input: authorName, weight: 5 },
@@ -199,13 +200,18 @@ export class OpenSearchService {
                     if (fs.existsSync(filePath)) {
                         const fileBuffer = fs.readFileSync(filePath);
                         documentToIndex.data = fileBuffer.toString('base64');
-                        // console.log(`[OpenSearch] Contenu lu pour: ${document.documentName}`); // Verbose
+                        documentToIndex.contentStatus = 'indexed';
+                        console.log(`[OpenSearch] Contenu lu pour: ${document.documentName} (${Math.round(fileBuffer.length / 1024)}KB)`);
                     } else {
+                        documentToIndex.contentStatus = 'file_missing';
                         console.warn(`[OpenSearch] Fichier introuvable pour indexation: ${filePath} (Source: ${document.documentUrl})`);
                     }
                 } catch (err) {
+                    documentToIndex.contentStatus = 'read_error';
                     console.warn(`[OpenSearch] Erreur lecture fichier: ${document.documentUrl}`, err);
                 }
+            } else {
+                documentToIndex.contentStatus = 'no_file';
             }
 
             await this.client.index({
@@ -262,8 +268,10 @@ export class OpenSearchService {
                                             {
                                                 multi_match: {
                                                     query,
-                                                    fields: ['documentName^5', 'description^2', 'content', 'groupName^2', 'categoryName^2', 'publicationYear'],
-                                                    fuzziness: 'AUTO',
+                                                    fields: ['documentName^5', 'description^3', 'content^1', 'groupName^2', 'categoryName^2', 'publicationYear'],
+                                                    // Stricter fuzziness for short terms to avoid noise
+                                                    fuzziness: query.length <= 3 ? 0 : (query.length <= 6 ? 1 : 'AUTO'),
+                                                    prefix_length: 2, // Require first 2 chars to match exactly
                                                 }
                                             },
                                             {
