@@ -12,6 +12,9 @@ import { Document } from "../entity/document";
 import { EnseignementAssignment } from "../entity/enseignement.assigment";
 import { DocumentMetadata } from "../entity/document.metadata";
 import { UserSearchPreference } from "../entity/user.search.preference";
+import { AuditLog } from "../entity/AuditLog";
+import { SecurityEvent } from "../entity/SecurityEvent";
+import { DailyMetrics } from "../entity/DailyMetrics";
 
 dotenv.config();
 
@@ -36,7 +39,10 @@ export const AppDataSource = new DataSource({
     Matiere,
     EnseignementAssignment,
     DocumentMetadata,
-    UserSearchPreference
+    UserSearchPreference,
+    AuditLog,
+    SecurityEvent,
+    DailyMetrics
   ],
   migrations: ['src/migrations/*.ts'],
   subscribers: ['src/subscribers/*.ts'],

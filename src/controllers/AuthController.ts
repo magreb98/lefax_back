@@ -33,12 +33,10 @@ export class AuthController {
 
       if (!user) {
         // Enregistrer l'échec de login
-        securityMonitoringService.recordLoginFailure({
+        securityMonitoringService.logLoginFailure({
           email,
           ip: req.ip || req.socket.remoteAddress || 'unknown',
-          fingerprint: (req as any).fingerprint?.hash,
           userAgent: req.get('user-agent') || 'unknown',
-          timestamp: new Date().toISOString(),
           reason: 'User not found'
         });
         return res.status(401).json({ message: 'Identifiants invalides' });
@@ -51,13 +49,10 @@ export class AuthController {
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
         // Enregistrer l'échec de login
-        securityMonitoringService.recordLoginFailure({
-          userId: user.id,
+        securityMonitoringService.logLoginFailure({
           email,
           ip: req.ip || req.socket.remoteAddress || 'unknown',
-          fingerprint: (req as any).fingerprint?.hash,
           userAgent: req.get('user-agent') || 'unknown',
-          timestamp: new Date().toISOString(),
           reason: 'Invalid password'
         });
         return res.status(401).json({ message: 'Identifiants invalides' });
@@ -97,15 +92,13 @@ export class AuthController {
       };
 
       // Enregistrer la connexion réussie dans l'audit log
-      securityMonitoringService.recordAuditLog({
+      securityMonitoringService.logAudit({
         userId: user.id,
         userName: `${user.firstName} ${user.lastName}`,
         action: 'LOGIN',
         resource: 'auth',
         ip: req.ip || req.socket.remoteAddress || 'unknown',
-        fingerprint: (req as any).fingerprint?.hash,
-        userAgent: req.get('user-agent') || 'unknown',
-        timestamp: new Date().toISOString()
+        userAgent: req.get('user-agent') || 'unknown'
       });
 
       return res.json({
@@ -124,15 +117,13 @@ export class AuthController {
       if (userId) {
         const user = await this.userRepository.findOne({ where: { id: userId } });
         if (user) {
-          securityMonitoringService.recordAuditLog({
+          securityMonitoringService.logAudit({
             userId: user.id,
             userName: `${user.firstName} ${user.lastName}`,
             action: 'LOGOUT',
             resource: 'auth',
             ip: req.ip || req.socket.remoteAddress || 'unknown',
-            fingerprint: (req as any).fingerprint?.hash,
-            userAgent: req.get('user-agent') || 'unknown',
-            timestamp: new Date().toISOString()
+            userAgent: req.get('user-agent') || 'unknown'
           });
         }
       }
@@ -189,7 +180,7 @@ export class AuthController {
       };
 
       // Logger l'action d'impersonation dans l'audit (Phase 4 legacy)
-      securityMonitoringService.recordAuditLog({
+      securityMonitoringService.logAudit({
         userId: currentUserId,
         userName: `${admin.firstName} ${admin.lastName}`,
         action: 'LOGIN', // Ou un type spécial IMPERSONATE
@@ -197,9 +188,7 @@ export class AuthController {
         resourceId: targetUser.id,
         details: { targetEmail: targetUser.email },
         ip: req.ip || req.socket.remoteAddress || 'unknown',
-        fingerprint: (req as any).fingerprint?.hash,
-        userAgent: req.get('user-agent') || 'unknown',
-        timestamp: new Date().toISOString()
+        userAgent: req.get('user-agent') || 'unknown'
       });
 
       return res.json({

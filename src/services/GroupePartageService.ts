@@ -19,7 +19,7 @@ export class GroupePartageService {
     private filiereRepository = AppDataSource.getRepository(Filiere);
     private classRepository = AppDataSource.getRepository(Class);
     private userRepository = AppDataSource.getRepository(User);
-    private enseignementRepository = AppDataSource.getRepository(EnseignementAssignment);
+    private enseignementAssignmentRepository = AppDataSource.getRepository(EnseignementAssignment);
     private documentRepository = AppDataSource.getRepository(Document);
     private documentCategorieRepository = AppDataSource.getRepository(DocumentCategorie);
     private autoGroupEnrollmentService = new AutoGroupEnrollmentService();
@@ -93,6 +93,18 @@ export class GroupePartageService {
             enabledGroupeIds = await this.userSearchPreferenceService.getEnabledGroupeIds(userId);
         }
 
+        // Pour les enseignants, récupérer leurs affectations
+        let enseignantClasseIds: string[] = [];
+        let enseignantMatiereIds: string[] = [];
+        if (user.role === UserRole.ENSEIGNANT || user.role === 'enseignant') {
+            const assignments = await this.enseignementAssignmentRepository.find({
+                where: { enseignant: { id: userId }, isActive: true },
+                relations: ['classe', 'matiere']
+            });
+            enseignantClasseIds = [...new Set(assignments.map(a => a.classe.id))];
+            enseignantMatiereIds = [...new Set(assignments.map(a => a.matiere.id))];
+        }
+
         qb.where(new Brackets((subQb) => {
             // CAS ÉTUDIANT : Voit uniquement ses propres groupes ET les groupes activés dans ses préférences
             if (user.role === UserRole.ETUDIANT || user.role === 'etudiant') {
@@ -101,7 +113,22 @@ export class GroupePartageService {
                     subQb.orWhere('groupe.id IN (:...enabledGroupeIds)', { enabledGroupeIds });
                 }
             }
-            // AUTRES CAS (Admin, Enseignant, etc.)
+            // CAS ENSEIGNANT : Voit uniquement les groupes de ses classes et matières enseignées
+            else if (user.role === UserRole.ENSEIGNANT || user.role === 'enseignant') {
+                // Groupes créés par l'enseignant
+                subQb.where('owner.id = :userId', { userId });
+
+                // Groupes de type CLASS pour les classes enseignées
+                if (enseignantClasseIds.length > 0) {
+                    subQb.orWhere('classe.id IN (:...enseignantClasseIds)', { enseignantClasseIds });
+                }
+
+                // Groupes de type MATIERE pour les matières enseignées
+                if (enseignantMatiereIds.length > 0) {
+                    subQb.orWhere('matiere.id IN (:...enseignantMatiereIds)', { enseignantMatiereIds });
+                }
+            }
+            // CAS ADMIN et AUTRES
             else {
                 // Condition 1: Propriétaire ou Membre
                 subQb.where('owner.id = :userId', { userId })
@@ -197,7 +224,7 @@ export class GroupePartageService {
         });
 
         // Récupérer tous les enseignants affectés à cette classe
-        const enseignements = await this.enseignementRepository.find({
+        const enseignements = await this.enseignementAssignmentRepository.find({
             where: {
                 classe: { id: classeId },
                 isActive: true
@@ -257,7 +284,7 @@ export class GroupePartageService {
             .getMany();
 
         // Récupérer tous les enseignants affectés aux classes de cette filière
-        const enseignements = await this.enseignementRepository
+        const enseignements = await this.enseignementAssignmentRepository
             .createQueryBuilder('enseignement')
             .innerJoin('enseignement.classe', 'classe')
             .innerJoin('classe.filiere', 'filiere')
@@ -309,7 +336,7 @@ export class GroupePartageService {
         });
 
         // Récupérer tous les enseignants affectés à cette école
-        const enseignements = await this.enseignementRepository.find({
+        const enseignements = await this.enseignementAssignmentRepository.find({
             where: {
                 ecole: { id: ecoleId },
                 isActive: true
@@ -341,7 +368,7 @@ export class GroupePartageService {
      * Synchroniser les groupes de partage après l'affectation d'un enseignant
      */
     async syncAfterEnseignementAssignment(enseignementId: string): Promise<void> {
-        const enseignement = await this.enseignementRepository.findOne({
+        const enseignement = await this.enseignementAssignmentRepository.findOne({
             where: { id: enseignementId },
             relations: ['ecole', 'classe', 'enseignant', 'matiere']
         });
@@ -532,7 +559,7 @@ export class GroupePartageService {
      * (basé sur ses affectations d'enseignement)
      */
     async getEnseignantGroupes(enseignantId: string): Promise<GroupePartage[]> {
-        const enseignements = await this.enseignementRepository.find({
+        const enseignements = await this.enseignementAssignmentRepository.find({
             where: {
                 enseignant: { id: enseignantId },
                 isActive: true
@@ -604,7 +631,7 @@ export class GroupePartageService {
         });
 
         // Récupérer tous les enseignants affectés à cette école
-        const enseignements = await this.enseignementRepository.find({
+        const enseignements = await this.enseignementAssignmentRepository.find({
             where: {
                 ecole: { id: ecoleId },
                 isActive: true
@@ -660,7 +687,7 @@ export class GroupePartageService {
             .getMany();
 
         // Récupérer tous les enseignants affectés aux classes de cette filière
-        const enseignements = await this.enseignementRepository
+        const enseignements = await this.enseignementAssignmentRepository
             .createQueryBuilder('enseignement')
             .innerJoin('enseignement.classe', 'classe')
             .innerJoin('classe.filiere', 'filiere')
@@ -716,7 +743,7 @@ export class GroupePartageService {
         });
 
         // Récupérer tous les enseignants affectés à cette classe
-        const enseignements = await this.enseignementRepository.find({
+        const enseignements = await this.enseignementAssignmentRepository.find({
             where: {
                 classe: { id: classeId },
                 isActive: true
@@ -831,7 +858,7 @@ export class GroupePartageService {
             }
         });
 
-        const enseignements = await this.enseignementRepository.find({
+        const enseignements = await this.enseignementAssignmentRepository.find({
             where: {
                 ecole: { id: ecoleId },
                 isActive: true
@@ -871,7 +898,7 @@ export class GroupePartageService {
             .where('filiere.id = :filiereId', { filiereId })
             .getMany();
 
-        const enseignements = await this.enseignementRepository
+        const enseignements = await this.enseignementAssignmentRepository
             .createQueryBuilder('enseignement')
             .innerJoin('enseignement.classe', 'classe')
             .innerJoin('classe.filiere', 'filiere')
@@ -911,7 +938,7 @@ export class GroupePartageService {
             }
         });
 
-        const enseignements = await this.enseignementRepository.find({
+        const enseignements = await this.enseignementAssignmentRepository.find({
             where: {
                 classe: { id: classeId },
                 isActive: true
@@ -1357,7 +1384,7 @@ export class GroupePartageService {
         });
 
         // 2. Récupérer tous les enseignants affectés à cette matière
-        const enseignements = await this.enseignementRepository.find({
+        const enseignements = await this.enseignementAssignmentRepository.find({
             where: {
                 matiere: { id: matiereId },
                 isActive: true

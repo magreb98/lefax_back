@@ -62,6 +62,11 @@ export class MonitoringService {
             }
         }, 30000);
 
+        // Vérification et archivage quotidien au démarrage
+        setTimeout(() => {
+            analyticsService.archiveDailyMetrics().catch(err => logger.error('[Monitoring] Daily archive failed', err));
+        }, 10000); // Attendre 10s après le démarrage
+
         logger.info(`✅ [Monitoring] Service started (system interval: 5000ms, analytics interval: 30000ms)`);
     }
 

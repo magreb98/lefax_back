@@ -1,42 +1,22 @@
+// Analytics Persistence System
+import { AppDataSource } from '../config/database';
+import { AuditLog } from '../entity/AuditLog';
+import { SecurityEvent } from '../entity/SecurityEvent';
 import { socketService } from './SocketService';
 import { logger } from '../config/logger';
 
-export interface LoginFailure {
-    userId?: string;
-    email: string;
-    ip: string;
-    fingerprint?: string;
-    userAgent: string;
-    timestamp: string;
-    reason: string;
-}
-
-export interface AuditLogEntry {
-    userId: string;
-    userName: string;
-    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT';
-    resource: string;
-    resourceId?: string;
-    details?: any;
-    ip: string;
-    fingerprint?: string;
-    userAgent: string;
-    timestamp: string;
-}
-
 export class SecurityMonitoringService {
     private static instance: SecurityMonitoringService;
-    private loginFailures: LoginFailure[] = [];
-    private auditLog: AuditLogEntry[] = [];
-    private readonly MAX_ENTRIES = 500;
+    private auditRepository = AppDataSource.getRepository(AuditLog);
+    private securityRepository = AppDataSource.getRepository(SecurityEvent);
 
-    // Tracking des tentatives par IP/Fingerprint
+    // Cache pour limiter les écritures répétitives (DDoS)
     private failuresByIp = new Map<string, number>();
     private failuresByFingerprint = new Map<string, number>();
 
     private constructor() {
-        // Nettoyer les anciennes entrées toutes les heures
-        setInterval(() => this.cleanOldEntries(), 3600000);
+        // Nettoyage périodique du cache de limitation
+        setInterval(() => this.cleanCache(), 3600000); // 1h
     }
 
     public static getInstance(): SecurityMonitoringService {
@@ -49,101 +29,110 @@ export class SecurityMonitoringService {
     /**
      * Enregistre une tentative de login échouée
      */
-    public recordLoginFailure(failure: LoginFailure): void {
-        this.loginFailures.push(failure);
+    public async logLoginFailure(data: {
+        email: string;
+        ip: string;
+        userAgent: string;
+        reason: string;
+        fingerprint?: string;
+    }): Promise<void> {
+        try {
+            // Détection Brute Force (simple)
+            const attempts = (this.failuresByIp.get(data.ip) || 0) + 1;
+            this.failuresByIp.set(data.ip, attempts);
 
-        // Limiter la taille
-        if (this.loginFailures.length > this.MAX_ENTRIES) {
-            this.loginFailures.shift();
-        }
+            let severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = 'LOW';
+            if (attempts > 5) severity = 'MEDIUM';
+            if (attempts > 10) severity = 'HIGH';
+            if (attempts > 20) severity = 'CRITICAL';
 
-        // Compter les échecs par IP
-        const ipCount = (this.failuresByIp.get(failure.ip) || 0) + 1;
-        this.failuresByIp.set(failure.ip, ipCount);
-
-        // Compter les échecs par Fingerprint
-        if (failure.fingerprint) {
-            const fpCount = (this.failuresByFingerprint.get(failure.fingerprint) || 0) + 1;
-            this.failuresByFingerprint.set(failure.fingerprint, fpCount);
-        }
-
-        // Émettre l'alerte
-        socketService.emitToDashboard('security:login-failure', {
-            failure,
-            ipFailureCount: ipCount,
-            fingerprintFailureCount: failure.fingerprint ? this.failuresByFingerprint.get(failure.fingerprint) : 0
-        });
-
-        // Alerte si bruteforce détecté
-        if (ipCount >= 5 || (failure.fingerprint && this.failuresByFingerprint.get(failure.fingerprint)! >= 5)) {
-            socketService.emitToDashboard('security:alert', {
-                type: 'BRUTEFORCE_DETECTED',
-                ip: failure.ip,
-                fingerprint: failure.fingerprint,
-                count: Math.max(ipCount, failure.fingerprint ? this.failuresByFingerprint.get(failure.fingerprint)! : 0),
-                timestamp: new Date().toISOString()
+            const event = this.securityRepository.create({
+                type: 'LOGIN_FAILURE',
+                severity,
+                ip: data.ip,
+                userAgent: data.userAgent,
+                userEmail: data.email,
+                details: { reason: data.reason, attempts, fingerprint: data.fingerprint }
             });
 
-            logger.warn(`[Security] Bruteforce detected - IP: ${failure.ip}, Fingerprint: ${failure.fingerprint}`);
+            await this.securityRepository.save(event);
+
+            // Alerte temps réel si critique
+            if (severity === 'HIGH' || severity === 'CRITICAL') {
+                socketService.emitToDashboard('security:alert', {
+                    type: 'BRUTE_FORCE_ATTEMPT',
+                    message: `Suspicious activity from IP ${data.ip} (${attempts} attempts)`,
+                    severity: 'HIGH'
+                });
+            }
+
+            logger.warn(`[Security] Login failure logged for ${data.email} from ${data.ip}`);
+        } catch (error) {
+            logger.error('[Security] Failed to log security event:', error);
         }
     }
 
     /**
-     * Enregistre une action dans l'audit log
+     * Enregistre une action d'audit
      */
-    public recordAuditLog(entry: AuditLogEntry): void {
-        this.auditLog.push(entry);
+    public async logAudit(data: {
+        userId: string;
+        userName: string;
+        action: string;
+        resource: string;
+        resourceId?: string;
+        ip: string;
+        userAgent: string;
+        details?: any;
+    }): Promise<void> {
+        try {
+            const auditEntry = this.auditRepository.create({
+                userId: data.userId,
+                userName: data.userName,
+                action: data.action,
+                resource: data.resource,
+                resourceId: data.resourceId,
+                details: data.details,
+                ip: data.ip,
+                userAgent: data.userAgent
+            });
 
-        // Limiter la taille
-        if (this.auditLog.length > this.MAX_ENTRIES) {
-            this.auditLog.shift();
+            await this.auditRepository.save(auditEntry);
+
+            // Notification temps réel
+            socketService.emitToDashboard('audit:new', auditEntry);
+
+        } catch (error) {
+            logger.error('[Security] Failed to log audit entry:', error);
         }
-
-        // Émettre vers le dashboard
-        socketService.emitToDashboard('audit:log', entry);
-
-        logger.info(`[Audit] ${entry.userName} (${entry.userId}) - ${entry.action} ${entry.resource} ${entry.resourceId || ''}`);
     }
 
     /**
-     * Récupère les échecs de login récents
+     * Récupère les derniers logs d'audit
      */
-    public getRecentLoginFailures(limit: number = 50): LoginFailure[] {
-        return this.loginFailures.slice(-limit);
+    public async getRecentAuditLogs(limit: number = 50): Promise<AuditLog[]> {
+        return await this.auditRepository.find({
+            order: { timestamp: 'DESC' },
+            take: limit
+        });
     }
 
     /**
-     * Récupère l'audit log récent
+     * Récupère les alertes de sécurité récentes
      */
-    public getRecentAuditLog(limit: number = 50): AuditLogEntry[] {
-        return this.auditLog.slice(-limit);
+    public async getRecentSecurityAlerts(limit: number = 20): Promise<SecurityEvent[]> {
+        return await this.securityRepository.find({
+            where: [
+                { severity: 'MEDIUM' },
+                { severity: 'HIGH' },
+                { severity: 'CRITICAL' }
+            ],
+            order: { timestamp: 'DESC' },
+            take: limit
+        });
     }
 
-    /**
-     * Récupère les IPs suspectes (avec le plus d'échecs)
-     */
-    public getSuspiciousIps(limit: number = 10): Array<{ ip: string; failureCount: number }> {
-        return Array.from(this.failuresByIp.entries())
-            .map(([ip, count]) => ({ ip, failureCount: count }))
-            .sort((a, b) => b.failureCount - a.failureCount)
-            .slice(0, limit);
-    }
-
-    /**
-     * Nettoie les anciennes entrées
-     */
-    private cleanOldEntries(): void {
-        const oneHourAgo = Date.now() - 3600000;
-
-        this.loginFailures = this.loginFailures.filter(f =>
-            new Date(f.timestamp).getTime() > oneHourAgo
-        );
-
-        this.auditLog = this.auditLog.filter(e =>
-            new Date(e.timestamp).getTime() > oneHourAgo
-        );
-
-        // Réinitialiser les compteurs
+    private cleanCache() {
         this.failuresByIp.clear();
         this.failuresByFingerprint.clear();
     }
