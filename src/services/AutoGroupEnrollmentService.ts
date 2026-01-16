@@ -31,20 +31,30 @@ export class AutoGroupEnrollmentService {
      * 
      * @param userId - ID de l'étudiant à inscrire
      * @param classeId - ID de la classe
+     * @param transactionalManager - Optionnel: EntityManager transactionnel parent
      * @throws Error si l'utilisateur ou la classe n'existe pas
      */
-    async enrollStudentInClassHierarchy(userId: string, classeId: string): Promise<void> {
+    async enrollStudentInClassHierarchy(userId: string, classeId: string, transactionalManager?: any): Promise<void> {
         const startTime = Date.now();
-        const queryRunner = AppDataSource.createQueryRunner();
+        // Si un manager externe est fourni, on l'utilise directement sans créer de nouvelle transaction
+        const manager = transactionalManager || AppDataSource.manager;
 
-        await queryRunner.connect();
-        await queryRunner.startTransaction();
+        // Si pas de manager externe, on crée un QueryRunner pour gérer notre propre transaction
+        let queryRunner: QueryRunner | null = null;
+
+        if (!transactionalManager) {
+            queryRunner = AppDataSource.createQueryRunner();
+            await queryRunner.connect();
+            await queryRunner.startTransaction();
+        }
 
         try {
+            const entityManager = transactionalManager || queryRunner!.manager;
+
             console.log(`[AutoEnrollment] Starting enrollment for user ${userId} in class ${classeId}`);
 
             // 2. Récupérer la classe avec TOUTES les relations nécessaires en une seule requête
-            const classe = await queryRunner.manager.findOne(Class, {
+            const classe = await entityManager.findOne(Class, {
                 where: { id: classeId },
                 relations: [
                     'groupePartage',
@@ -66,7 +76,7 @@ export class AutoGroupEnrollmentService {
             console.log(`[AutoEnrollment] School: ${classe.filiere?.school?.schoolName || 'N/A'}`);
 
             // 1. Mettre à jour l'utilisateur (Classe, Ecole, Rôle)
-            const user = await queryRunner.manager.findOne(User, {
+            const user = await entityManager.findOne(User, {
                 where: { id: userId }
             });
 
@@ -104,7 +114,7 @@ export class AutoGroupEnrollmentService {
             }
 
             if (userUpdated) {
-                await queryRunner.manager.save(user);
+                await entityManager.save(user);
                 console.log(`[AutoEnrollment] User ${userId} updated and saved`);
             }
 
@@ -148,29 +158,64 @@ export class AutoGroupEnrollmentService {
 
             // 4. Batch Insert - UNE SEULE requête pour tous les groupes
             if (groupeIds.length > 0) {
-                await this.batchAddUserToGroups(queryRunner, userId, groupeIds);
-                console.log(`[AutoEnrollment] Successfully added user to ${groupeIds.length} groups`);
+                // Utilisation de la méthode adaptée selon le contexte (EntityManager vs QueryRunner)
+                // Pour simplifier, on peut faire des inserts individuels si on est en EntityManager pur sans accès queryRunner facile
+                // Ou alors refactoriser batchAddUserToGroups pour accepter EntityManager
+
+                // Pour l'instant, faisons une insertion simple via le repository/manager pour être compatible
+                // avec les deux modes (QueryRunner et EntityManager)
+
+                const existingMemberships = await entityManager.createQueryBuilder()
+                    .select("gpu.groupe_partage_id", "groupe_partage_id")
+                    .from("groupe_partage_users", "gpu")
+                    .where("gpu.user_id = :userId", { userId })
+                    .andWhere("gpu.groupe_partage_id IN (:...groupeIds)", { groupeIds })
+                    .getRawMany();
+
+                console.log(`[AutoEnrollment] Existing memberships:`, existingMemberships);
+
+                const existingGroupIds = new Set(existingMemberships.map((m: any) => m.groupe_partage_id));
+                const newGroupIds = groupeIds.filter(id => !existingGroupIds.has(id));
+
+                console.log(`[AutoEnrollment] Total groups: ${groupeIds.length}, Existing: ${existingGroupIds.size}, New: ${newGroupIds.length}`);
+
+                if (newGroupIds.length > 0) {
+                    const values = newGroupIds.map(groupeId =>
+                        `('${groupeId}', '${userId}')`
+                    ).join(', ');
+
+                    await entityManager.query(
+                        `INSERT IGNORE INTO groupe_partage_users (groupe_partage_id, user_id) VALUES ${values}`
+                    );
+                    console.log(`[AutoEnrollment] Inserted user into ${newGroupIds.length} new groups`);
+                }
             } else {
                 console.warn(`[AutoEnrollment] No groups found for class ${classeId}`);
             }
 
-            // 5. Commit de la transaction
-            await queryRunner.commitTransaction();
+            // 5. Commit de la transaction SI on a créé le QueryRunner
+            if (queryRunner) {
+                await queryRunner.commitTransaction();
+            }
 
             const duration = Date.now() - startTime;
             this.updateMetrics('enrollment', duration);
 
             console.log(`✅ [AutoEnrollment] Student ${userId} enrolled in ${groupeIds.length} groups for class ${classeId} (${duration}ms)`);
         } catch (error) {
-            // Rollback en cas d'erreur
-            await queryRunner.rollbackTransaction();
+            // Rollback en cas d'erreur SI on a créé le QueryRunner
+            if (queryRunner) {
+                await queryRunner.rollbackTransaction();
+            }
             this.metrics.errors++;
 
             console.error(`❌ [AutoEnrollment] Failed to enroll student ${userId} in class ${classeId}:`, error);
             throw error;
         } finally {
-            // Libérer la connexion
-            await queryRunner.release();
+            // Libérer la connexion SI on a créé le QueryRunner
+            if (queryRunner) {
+                await queryRunner.release();
+            }
         }
     }
 

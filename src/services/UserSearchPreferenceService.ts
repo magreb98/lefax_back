@@ -3,6 +3,7 @@ import { User, UserRole } from "../entity/user";
 import { UserSearchPreference } from "../entity/user.search.preference";
 import { GroupePartage } from "../entity/groupe.partage";
 import { Class } from "../entity/classe";
+import { EntityManager } from "typeorm";
 
 /**
  * Service de gestion des préférences de recherche des utilisateurs
@@ -20,12 +21,18 @@ export class UserSearchPreferenceService {
      * 
      * @param userId - ID de l'étudiant
      * @param classeId - ID de la classe
+     * @param transactionalManager - Optionnel: EntityManager transactionnel
      * @throws Error si l'utilisateur n'est pas un étudiant ou si la classe n'existe pas
      */
-    async createDefaultPreferences(userId: string, targetGroupeId: string): Promise<void> {
+    async createDefaultPreferences(userId: string, targetGroupeId: string, transactionalManager?: EntityManager): Promise<void> {
         console.log(`[SearchPreference] Creating default preferences for user ${userId} with target groupe ${targetGroupeId}`);
 
-        const user = await this.userRepository.findOne({ where: { id: userId } });
+        // Utiliser le manager transactionnel ou les repositories par défaut
+        const userRepo = transactionalManager ? transactionalManager.getRepository(User) : this.userRepository;
+        const groupeRepo = transactionalManager ? transactionalManager.getRepository(GroupePartage) : this.groupePartageRepository;
+        const prefRepo = transactionalManager ? transactionalManager.getRepository(UserSearchPreference) : this.preferenceRepository;
+
+        const user = await userRepo.findOne({ where: { id: userId } });
         if (!user) {
             throw new Error('Utilisateur non trouvé');
         }
@@ -35,14 +42,14 @@ export class UserSearchPreferenceService {
             return;
         }
 
-        const targetGroupe = await this.groupePartageRepository.findOne({ where: { id: targetGroupeId } });
+        const targetGroupe = await groupeRepo.findOne({ where: { id: targetGroupeId } });
         if (!targetGroupe) {
             console.warn(`[SearchPreference] Groupe ${targetGroupeId} not found, cannot create default preference`);
             return;
         }
 
         // Vérifier si des préférences existent déjà
-        const existingPrefs = await this.preferenceRepository.find({
+        const existingPrefs = await prefRepo.find({
             where: { user: { id: userId } }
         });
 
@@ -52,7 +59,7 @@ export class UserSearchPreferenceService {
         }
 
         // Récupérer tous les groupes de la hiérarchie de l'école
-        const availableGroupes = await this.getAvailableGroupes(userId);
+        const availableGroupes = await this.getAvailableGroupes(userId, transactionalManager);
         console.log(`[SearchPreference] Found ${availableGroupes.length} available groups for initialization`);
 
         // Créer les préférences pour TOUS les groupes disponibles
@@ -67,7 +74,7 @@ export class UserSearchPreferenceService {
             const isDefault = isTargetGroup;
             const displayOrder = isTargetGroup ? 1 : 99;
 
-            const pref = this.preferenceRepository.create({
+            const pref = prefRepo.create({
                 user,
                 groupePartage: groupe,
                 isEnabled,
@@ -81,7 +88,7 @@ export class UserSearchPreferenceService {
         // Si le groupe cible n'était pas dans availableGroupes (cas rare/erreur sync), on l'ajoute quand même
         if (!newPreferences.some(p => p.groupePartage.id === targetGroupeId)) {
             console.warn(`[SearchPreference] Target group ${targetGroupeId} was not in available groups, forcing addition`);
-            const pref = this.preferenceRepository.create({
+            const pref = prefRepo.create({
                 user,
                 groupePartage: targetGroupe,
                 isEnabled: true,
@@ -92,7 +99,7 @@ export class UserSearchPreferenceService {
         }
 
         if (newPreferences.length > 0) {
-            await this.preferenceRepository.save(newPreferences);
+            await prefRepo.save(newPreferences);
             console.log(`✅ [SearchPreference] Created ${newPreferences.length} preferences for student ${userId}`);
         }
     }
@@ -143,10 +150,14 @@ export class UserSearchPreferenceService {
      * (Groupes de sa hiérarchie : classe, matières, filière, école)
      * 
      * @param userId - ID de l'utilisateur
+     * @param transactionalManager - Optionnel: EntityManager transactionnel
      * @returns Liste des groupes disponibles
      */
-    async getAvailableGroupes(userId: string): Promise<GroupePartage[]> {
-        const user = await this.userRepository.findOne({
+    async getAvailableGroupes(userId: string, transactionalManager?: EntityManager): Promise<GroupePartage[]> {
+        const userRepo = transactionalManager ? transactionalManager.getRepository(User) : this.userRepository;
+        const groupeRepo = transactionalManager ? transactionalManager.getRepository(GroupePartage) : this.groupePartageRepository;
+
+        const user = await userRepo.findOne({
             where: { id: userId },
             relations: ['school', 'classe']
         });
@@ -159,7 +170,7 @@ export class UserSearchPreferenceService {
         const schoolId = user.school.id;
 
         // On récupère TOUS les groupes de l'école (hiérarchie complète)
-        const groupes = await this.groupePartageRepository.createQueryBuilder('groupe')
+        const groupes = await groupeRepo.createQueryBuilder('groupe')
             .leftJoin('groupe.ecole', 'ecole')
             .leftJoin('groupe.filiere', 'filiere')
             .leftJoin('filiere.school', 'filiereSchool')

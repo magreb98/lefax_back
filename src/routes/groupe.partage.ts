@@ -80,6 +80,15 @@ router.post('/join',
 );
 
 /**
+ * POST /api/groupes/:groupeId/complete-enrollment
+ * Finaliser l'enrôlement en sélectionnant une classe
+ */
+router.post('/:groupeId/complete-enrollment',
+    authMiddleware,
+    (req, res) => groupePartageController.completeEnrollment(req, res)
+);
+
+/**
  * GET /api/groupes/enseignant/:enseignantId/groupes
  * Récupérer les groupes d'un enseignant (authentification requise)
  */

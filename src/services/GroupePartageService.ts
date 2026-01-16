@@ -7,7 +7,7 @@ import { EnseignementAssignment } from "../entity/enseignement.assigment";
 import { GroupePartage, GroupePartageType } from "../entity/groupe.partage";
 import { Document } from "../entity/document";
 import { DocumentCategorie } from "../entity/document.categorie";
-import { Brackets, SelectQueryBuilder } from 'typeorm';
+import { Brackets, SelectQueryBuilder, EntityManager } from 'typeorm';
 import { asyncJobService, AsyncJobType } from "./AsyncJobService";
 import { AutoGroupEnrollmentService } from "./AutoGroupEnrollmentService";
 import { UserSearchPreferenceService } from "./UserSearchPreferenceService";
@@ -1074,80 +1074,261 @@ export class GroupePartageService {
     /**
      * Rejoindre un groupe via invitation
      */
-    async joinByInvitation(token: string, userId: string): Promise<{ groupe: GroupePartage, user: User }> {
-        const groupe = await this.groupePartageRepository.findOne({
-            where: { invitationToken: token },
-            relations: [
-                'users',
-                'classe',
-                'matiere',
-                'matiere.classe',
-                'filiere',
-                'ecole'
-            ]
+    async joinByInvitation(token: string, userId: string, classeId?: string): Promise<{
+        groupe: GroupePartage,
+        user: User,
+        requiresClassSelection: boolean,
+        availableClasses?: Class[]
+    }> {
+        return await AppDataSource.manager.transaction(async (transactionalEntityManager) => {
+            const groupeRepo = transactionalEntityManager.getRepository(GroupePartage);
+            const userRepo = transactionalEntityManager.getRepository(User);
+            const classRepo = transactionalEntityManager.getRepository(Class);
+            const filiereRepo = transactionalEntityManager.getRepository(Filiere);
+
+            const groupe = await groupeRepo.findOne({
+                where: { invitationToken: token },
+                relations: [
+                    'users',
+                    'classe',
+                    'matiere',
+                    'matiere.classe',
+                    'filiere',
+                    'filiere.classes',
+                    'ecole'
+                ]
+            });
+
+            console.log(`[JoinByInvitation] Groupe loaded:`, {
+                id: groupe?.id,
+                type: groupe?.type,
+                hasFiliere: !!groupe?.filiere,
+                filiereClassesCount: groupe?.filiere?.classes?.length || 0,
+                hasEcole: !!groupe?.ecole
+            });
+
+            if (!groupe) {
+                throw new Error('Invitation invalide');
+            }
+
+            if (!groupe.invitationExpiresAt || groupe.invitationExpiresAt < new Date()) {
+                throw new Error('Invitation expirée');
+            }
+
+            const user = await userRepo.findOne({ where: { id: userId } });
+            if (!user) {
+                throw new Error('Utilisateur introuvable');
+            }
+
+            // Déterminer la classe de contexte selon le type de groupe
+            let contextualClasse: Class | null = null;
+            let requiresClassSelection = false;
+            let availableClasses: Class[] = [];
+
+            // CAS 1: Groupe de CLASSE (direct)
+            if (groupe.type === GroupePartageType.CLASS && groupe.classe) {
+                contextualClasse = groupe.classe;
+                console.log(`[JoinByInvitation] Direct class group: ${contextualClasse.className}`);
+            }
+
+            // CAS 2: Groupe de MATIERE
+            else if (groupe.type === GroupePartageType.MATIERE && groupe.matiere?.classe) {
+                contextualClasse = groupe.matiere.classe;
+                console.log(`[JoinByInvitation] Matiere group, using class: ${contextualClasse.className}`);
+            }
+
+            // CAS 3: Groupe de FILIERE
+            else if (groupe.type === GroupePartageType.FILIERE && groupe.filiere) {
+                if (classeId) {
+                    // Vérifier que la classe appartient bien à cette filière
+                    contextualClasse = await classRepo.findOne({
+                        where: { id: classeId, filiere: { id: groupe.filiere.id } },
+                        relations: ['filiere', 'filiere.school']
+                    });
+                    if (!contextualClasse) {
+                        throw new Error('Classe invalide pour cette filière');
+                    }
+                    console.log(`[JoinByInvitation] Filiere group, class selected: ${contextualClasse.className}`);
+                } else {
+                    // Récupérer toutes les classes de la filière
+                    availableClasses = await classRepo.find({
+                        where: { filiere: { id: groupe.filiere.id } },
+                        relations: ['filiere'],
+                        order: { className: 'ASC' }
+                    });
+                    requiresClassSelection = true;
+                    console.log(`[JoinByInvitation] Filiere group, ${availableClasses.length} classes available for selection`);
+                }
+            }
+
+            // CAS 4: Groupe d'ECOLE
+            else if (groupe.type === GroupePartageType.SCHOOL && groupe.ecole) {
+                if (classeId) {
+                    // Vérifier que la classe appartient bien à cette école
+                    contextualClasse = await classRepo.findOne({
+                        where: { id: classeId },
+                        relations: ['filiere', 'filiere.school']
+                    });
+                    if (!contextualClasse || contextualClasse.filiere?.school?.id !== groupe.ecole.id) {
+                        throw new Error('Classe invalide pour cette école');
+                    }
+                    console.log(`[JoinByInvitation] School group, class selected: ${contextualClasse.className}`);
+                } else {
+                    // Récupérer toutes les classes de l'école avec leurs filières
+                    availableClasses = await classRepo.find({
+                        where: { filiere: { school: { id: groupe.ecole.id } } },
+                        relations: ['filiere'],
+                        order: { className: 'ASC' }
+                    });
+                    requiresClassSelection = true;
+                    console.log(`[JoinByInvitation] School group, ${availableClasses.length} classes available for selection`);
+                }
+            }
+
+            // Si une classe est déterminée, enrôler dans la hiérarchie
+            if (contextualClasse) {
+                console.log(`[JoinByInvitation] Enrolling user ${user.id} in class hierarchy for context: ${contextualClasse.id}`);
+
+                // Ajouter l'utilisateur au groupe avant l'enrôlement
+                if (!groupe.users) {
+                    groupe.users = [];
+                }
+                if (!groupe.users.some(u => u.id === userId)) {
+                    groupe.users.push(user);
+                    await groupeRepo.save(groupe);
+                }
+
+                await this.autoGroupEnrollmentService.enrollStudentInClassHierarchy(user.id, contextualClasse.id, transactionalEntityManager);
+
+                // Recharger l'utilisateur pour obtenir le rôle mis à jour et les relations
+                const updatedUser = await userRepo.findOne({
+                    where: { id: user.id },
+                    relations: ['classe', 'school', 'classe.filiere', 'classe.filiere.school']
+                });
+
+                if (updatedUser) {
+                    console.log(`[JoinByInvitation] User role after enrollment: ${updatedUser.role}`);
+
+                    // Créer les préférences de recherche par défaut pour les étudiants
+                    if (updatedUser.role === UserRole.ETUDIANT) {
+                        try {
+                            await this.userSearchPreferenceService.createDefaultPreferences(updatedUser.id, groupe.id, transactionalEntityManager);
+                            console.log(`[JoinByInvitation] Search preferences created for student ${updatedUser.id} (Default: ${groupe.groupeName})`);
+                        } catch (prefError: any) {
+                            console.error(`[JoinByInvitation] Failed to create search preferences:`, prefError.message);
+                        }
+                    }
+
+                    return {
+                        groupe,
+                        user: updatedUser,
+                        requiresClassSelection: false
+                    };
+                }
+            }
+
+            // Sinon, retourner avec la liste des classes disponibles
+            console.log(`[JoinByInvitation] Returning with requiresClassSelection=${requiresClassSelection}, availableClasses count=${availableClasses.length}`);
+            return {
+                groupe,
+                user,
+                requiresClassSelection,
+                availableClasses
+            };
         });
+    }
 
-        if (!groupe) {
-            throw new Error('Invitation invalide');
-        }
+    /**
+     * Finaliser l'enrôlement d'un utilisateur dans un groupe en sélectionnant une classe
+     * Utilisé pour les groupes de filière et d'école
+     */
+    /**
+     * Finaliser l'enrôlement d'un utilisateur dans un groupe en sélectionnant une classe
+     * Utilisé pour les groupes de filière et d'école
+     */
+    async completeEnrollment(userId: string, groupeId: string, classeId: string): Promise<User> {
+        return await AppDataSource.manager.transaction(async (transactionalEntityManager) => {
+            const groupeRepo = transactionalEntityManager.getRepository(GroupePartage);
+            const classRepo = transactionalEntityManager.getRepository(Class);
+            const userRepo = transactionalEntityManager.getRepository(User);
 
-        if (!groupe.invitationExpiresAt || groupe.invitationExpiresAt < new Date()) {
-            throw new Error('Invitation expirée');
-        }
+            // Vérifier que l'utilisateur est membre du groupe
+            const groupe = await groupeRepo.findOne({
+                where: { id: groupeId },
+                relations: ['users', 'filiere', 'ecole']
+            });
 
-        const user = await this.userRepository.findOne({ where: { id: userId } });
-        if (!user) {
-            throw new Error('Utilisateur introuvable');
-        }
+            if (!groupe) {
+                throw new Error('Groupe introuvable');
+            }
 
-        if (!groupe.users) {
-            groupe.users = [];
-        }
+            // Ajouter l'utilisateur au groupe s'il n'y est pas déjà
+            // (Cela peut arriver si requiresClassSelection était true dans joinByInvitation)
+            if (!groupe.users) {
+                groupe.users = [];
+            }
+            
+            const user = await userRepo.findOne({ where: { id: userId } });
+            if (!user) {
+                throw new Error('Utilisateur introuvable');
+            }
 
-        if (!groupe.users.some(u => u.id === userId)) {
-            groupe.users.push(user);
-            await this.groupePartageRepository.save(groupe);
-        }
+            if (!groupe.users.some(u => u.id === userId)) {
+                groupe.users.push(user);
+                await groupeRepo.save(groupe);
+                console.log(`[CompleteEnrollment] Added user ${userId} to group ${groupeId}`);
+            }
 
-        // Déterminer la classe de contexte si ce n'est pas un groupe de classe direct
-        let contextualClasse = groupe.classe;
-        if (!contextualClasse && groupe.type === GroupePartageType.MATIERE && groupe.matiere?.classe) {
-            contextualClasse = groupe.matiere.classe;
-        }
+            // Vérifier que la classe est valide pour ce groupe
+            const classe = await classRepo.findOne({
+                where: { id: classeId },
+                relations: ['filiere', 'filiere.school']
+            });
 
-        // Si on a une classe associée (directement ou via une matière), on lance la synchronisation
-        if (contextualClasse) {
-            console.log(`[JoinByInvitation] Enrolling user ${user.id} in class hierarchy for context: ${contextualClasse.id}`);
+            if (!classe) {
+                throw new Error('Classe introuvable');
+            }
 
-            // ✅ SIMPLIFICATION: Enrôlement complet via AutoGroupEnrollmentService
-            // Cette méthode gère maintenant aussi la mise à jour du rôle, de la classe et de l'école de l'utilisateur
-            await this.autoGroupEnrollmentService.enrollStudentInClassHierarchy(user.id, contextualClasse.id);
+            // Validation selon le type de groupe
+            if (groupe.type === GroupePartageType.FILIERE && groupe.filiere) {
+                if (classe.filiere?.id !== groupe.filiere.id) {
+                    throw new Error('Cette classe n\'appartient pas à la filière du groupe');
+                }
+            } else if (groupe.type === GroupePartageType.SCHOOL && groupe.ecole) {
+                if (classe.filiere?.school?.id !== groupe.ecole.id) {
+                    throw new Error('Cette classe n\'appartient pas à l\'école du groupe');
+                }
+            } else {
+                throw new Error('Ce groupe ne nécessite pas de sélection de classe');
+            }
 
-            // Recharger l'utilisateur pour obtenir le rôle mis à jour et les relations
-            const updatedUser = await this.userRepository.findOne({
-                where: { id: user.id },
+            console.log(`[CompleteEnrollment] Enrolling user ${userId} in class ${classeId} for group ${groupeId}`);
+
+            // Enrôler dans la hiérarchie
+            await this.autoGroupEnrollmentService.enrollStudentInClassHierarchy(userId, classeId, transactionalEntityManager);
+
+            // Recharger l'utilisateur
+            const updatedUser = await userRepo.findOne({
+                where: { id: userId },
                 relations: ['classe', 'school', 'classe.filiere', 'classe.filiere.school']
             });
 
-            if (updatedUser) {
-                console.log(`[JoinByInvitation] User role after enrollment: ${updatedUser.role}`);
-
-                // Créer les préférences de recherche par défaut pour les étudiants
-                if (updatedUser.role === UserRole.ETUDIANT) {
-                    try {
-                        // Utiliser l'ID du groupe réellement rejoint (groupe.id) au lieu de la classe
-                        await this.userSearchPreferenceService.createDefaultPreferences(updatedUser.id, groupe.id);
-                        console.log(`[JoinByInvitation] Search preferences created for student ${updatedUser.id} (Default: ${groupe.groupeName})`);
-                    } catch (prefError: any) {
-                        console.error(`[JoinByInvitation] Failed to create search preferences:`, prefError.message);
-                    }
-                }
-
-                return { groupe, user: updatedUser };
+            if (!updatedUser) {
+                throw new Error('Erreur lors de la mise à jour de l\'utilisateur');
             }
-        }
 
-        return { groupe, user };
+            // Créer les préférences de recherche
+            if (updatedUser.role === UserRole.ETUDIANT) {
+                try {
+                    await this.userSearchPreferenceService.createDefaultPreferences(userId, groupeId, transactionalEntityManager);
+                    console.log(`[CompleteEnrollment] Search preferences created for student ${userId}`);
+                } catch (prefError: any) {
+                    console.error(`[CompleteEnrollment] Failed to create search preferences:`, prefError.message);
+                }
+            }
+
+            return updatedUser;
+        });
     }
 
     /**

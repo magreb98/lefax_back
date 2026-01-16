@@ -765,11 +765,10 @@ export class GroupePartageController {
      */
     async joinByInvitation(req: Request, res: Response): Promise<void> {
         try {
-            const { token } = req.body;
-            // Assuming auth middleware populates req.user
+            const { token, classeId } = req.body;
             const userId = (req as any).user?.id;
 
-            console.log('🔗 [JOIN] Request received:', { token, userId, body: req.body });
+            console.log('🔗 [JOIN] Request received:', { token, userId, classeId, body: req.body });
 
             if (!token || !userId) {
                 console.error('❌ [JOIN] Missing token or userId');
@@ -777,15 +776,53 @@ export class GroupePartageController {
                 return;
             }
 
-            const result = await this.groupePartageService.joinByInvitation(token, userId);
+            const result = await this.groupePartageService.joinByInvitation(token, userId, classeId);
+            
             res.status(200).json({
-                message: 'Groupe rejoint avec succès',
+                message: result.requiresClassSelection 
+                    ? 'Veuillez sélectionner votre classe' 
+                    : 'Groupe rejoint avec succès',
                 groupe: result.groupe,
-                user: result.user
+                user: result.user,
+                requiresClassSelection: result.requiresClassSelection,
+                availableClasses: result.availableClasses
             });
         } catch (error: any) {
             console.error('❌ [JOIN] Error joining group:', error.message);
             console.error(error.stack);
+            res.status(400).json({ message: error.message });
+        }
+    }
+
+    /**
+     * Finaliser l'enrôlement en sélectionnant une classe
+     * POST /api/groupes-partage/:groupeId/complete-enrollment
+     */
+    async completeEnrollment(req: Request, res: Response): Promise<void> {
+        try {
+            const { groupeId } = req.params;
+            const { classeId } = req.body;
+            const userId = (req as any).user?.id;
+
+            console.log('✅ [COMPLETE] Request received:', { groupeId, classeId, userId });
+
+            if (!groupeId || !classeId || !userId) {
+                res.status(400).json({ message: 'Paramètres manquants' });
+                return;
+            }
+
+            const updatedUser = await this.groupePartageService.completeEnrollment(
+                userId,
+                groupeId,
+                classeId
+            );
+
+            res.status(200).json({
+                message: 'Enrôlement complété avec succès',
+                user: updatedUser
+            });
+        } catch (error: any) {
+            console.error('❌ [COMPLETE] Error completing enrollment:', error.message);
             res.status(400).json({ message: error.message });
         }
     }
