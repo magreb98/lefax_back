@@ -405,7 +405,6 @@ export class DocumentService {
         const user = await this.userRepository.findOne({
             where: { id: userId },
             relations: [
-                'groupesPartage',
                 'classe',
                 'classe.groupePartage',
                 'classe.filiere',
@@ -464,37 +463,47 @@ export class DocumentService {
             });
         }
 
-        // Groupes de partage directs
-        if (user.groupesPartage) {
-            user.groupesPartage.forEach(g => groupeIds.push(g.id));
-        }
+        // 2. Groupes de partage directs (via table de jointure)
+        // ✅ FIX: Charger directement depuis la table de jointure au lieu de la relation ORM
+        // Cela garantit que les insertions SQL directes sont prises en compte
+        const directGroupMemberships = await AppDataSource.query(
+            `SELECT groupe_partage_id FROM groupe_partage_users WHERE user_id = ?`,
+            [userId]
+        );
+        directGroupMemberships.forEach((row: any) => {
+            groupeIds.push(row.groupe_partage_id);
+        });
 
-        // Groupe de sa classe
+        // 3. Groupe de sa classe
         if (user.classe?.groupePartage) {
             groupeIds.push(user.classe.groupePartage.id);
         }
 
-        // Groupe de son école
+        // 4. Groupe de son école
         if (user.school?.groupePartage) {
             groupeIds.push(user.school.groupePartage.id);
         }
 
-        // Groupe de sa filière (via classe)
+        // 5. Groupe de sa filière (via classe)
         if (user.classe?.filiere?.groupePartage) {
             groupeIds.push(user.classe.filiere.groupePartage.id);
         }
 
-        // Groupe de son école (via filière)
+        // 6. Groupe de son école (via filière)
         if (user.classe?.filiere?.school?.groupePartage) {
             groupeIds.push(user.classe.filiere.school.groupePartage.id);
         }
 
-        // Groupe public
+        // 7. Groupe public
         const publicGroupe = await this.getOrCreatePublicGroupe();
         groupeIds.push(publicGroupe.id);
 
         // Supprimer les doublons
-        return [...new Set(groupeIds)];
+        const uniqueGroupeIds = [...new Set(groupeIds)];
+        
+        console.log(`[DocumentService] User ${userId} has access to ${uniqueGroupeIds.length} groups:`, uniqueGroupeIds);
+        
+        return uniqueGroupeIds;
     }
 
     /**

@@ -193,7 +193,33 @@ export class AutoGroupEnrollmentService {
                 console.warn(`[AutoEnrollment] No groups found for class ${classeId}`);
             }
 
-            // 5. Commit de la transaction SI on a créé le QueryRunner
+            // 5. Ajouter l'utilisateur au groupe "public" s'il existe
+            try {
+                const publicGroup = await entityManager.findOne(GroupePartage, {
+                    where: { groupeName: 'public' }
+                });
+
+                if (publicGroup) {
+                    const isAlreadyMember = await entityManager.createQueryBuilder()
+                        .select("gpu")
+                        .from("groupe_partage_users", "gpu")
+                        .where("gpu.user_id = :userId", { userId })
+                        .andWhere("gpu.groupe_partage_id = :groupeId", { groupeId: publicGroup.id })
+                        .getRawOne();
+
+                    if (!isAlreadyMember) {
+                        await entityManager.query(
+                            `INSERT IGNORE INTO groupe_partage_users (groupe_partage_id, user_id) VALUES ('${publicGroup.id}', '${userId}')`
+                        );
+                        console.log(`[AutoEnrollment] Added user to public group`);
+                    }
+                }
+            } catch (publicGroupError) {
+                console.warn(`[AutoEnrollment] Could not add user to public group:`, publicGroupError);
+                // Ne pas faire échouer l'enrôlement si le groupe public n'existe pas
+            }
+
+            // 6. Commit de la transaction SI on a créé le QueryRunner
             if (queryRunner) {
                 await queryRunner.commitTransaction();
             }
