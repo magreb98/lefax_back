@@ -25,6 +25,7 @@
     "@opensearch-project/opensearch": "^3.5.1",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-fingerprint": "^1.2.2",
@@ -46,7 +47,8 @@
     "typescript": "^5.9.3",
     "uuid": "^13.0.0",
     "winston": "^3.18.3",
-    "winston-daily-rotate-file": "^5.0.0"
+    "winston-daily-rotate-file": "^5.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

@@ -155,6 +155,13 @@ router.get('/groupes/:groupeId/enseignants', authMiddleware, (req, res) => userC
 router.post('/groupes/sync/enseignement/:enseignementId', authMiddleware, (req, res) => userController.syncAfterEnseignementAssignment(req, res));
 
 // ========== ROUTES GESTION DES ENSEIGNANTS ==========
+
+/**
+ * POST /api/users/teachers/create
+ * Créer un nouvel enseignant dans l'école de l'admin connecté (ADMIN only)
+ */
+router.post('/teachers/create', authMiddleware, requireAdmin, (req, res) => userController.createTeacher(req, res));
+
 /**
  * GET /api/users/school/:schoolId/teachers
  * Récupérer tous les enseignants d'une école

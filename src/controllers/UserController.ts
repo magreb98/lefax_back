@@ -613,6 +613,72 @@ export class UserController {
   }
 
   /**
+   * Créer un nouvel enseignant dans l'école de l'admin connecté
+   */
+  async createTeacher(req: Request, res: Response): Promise<void> {
+    try {
+      const { firstName, lastName, email, password, phoneNumber } = req.body;
+      const currentUser = (req as any).user;
+
+      console.log('=== CREATE TEACHER DEBUG ===');
+      console.log('Body:', { firstName, lastName, email, phoneNumber });
+      console.log('Current user:', currentUser ? { id: currentUser.id, role: currentUser.role, schoolId: currentUser.school?.id } : 'undefined');
+      console.log('Req Body schoolId:', req.body.schoolId);
+
+      // Vérifier que l'utilisateur est authentifié
+
+      // Vérifier que l'utilisateur est authentifié
+      if (!currentUser) {
+        res.status(401).json({
+          message: 'Vous devez être authentifié pour créer un enseignant.'
+        });
+        return;
+      }
+
+      let schoolId = req.body.schoolId;
+
+      // Si pas de schoolId, utiliser celui de l'admin connecté
+      if (!schoolId && currentUser.school && currentUser.school.id) {
+        schoolId = currentUser.school.id;
+      }
+
+      if (!schoolId) {
+        res.status(400).json({
+          message: 'L\'identifiant de l\'école est requis (schoolId) ou vous devez être associé à une école.'
+        });
+        return;
+      }
+
+      const teacher = await this.userService.createUser({
+        firstName,
+        lastName,
+        email,
+        password,
+        phoneNumber,
+        role: UserRole.ENSEIGNANT,
+        schoolId: schoolId
+      });
+
+      res.status(201).json({
+        message: 'Enseignant créé avec succès',
+        teacher: {
+          id: teacher.id,
+          firstName: teacher.firstName,
+          lastName: teacher.lastName,
+          email: teacher.email,
+          role: teacher.role,
+          school: teacher.school
+        }
+      });
+    } catch (error: any) {
+      console.error('Erreur lors de la création de l\'enseignant:', error);
+      res.status(400).json({
+        message: error.message || 'Erreur lors de la création de l\'enseignant'
+      });
+    }
+  }
+
+  /**
    * Récupérer tous les enseignants de l'école de l'administrateur connecté
    * GET /api/users/my-school/teachers
    */
@@ -649,20 +715,43 @@ export class UserController {
   }
 
   /**
-   * Ajouter un enseignant � une �cole
+   * Ajouter un enseignant  une cole
    */
   async addTeacherToSchool(req: Request, res: Response): Promise<void> {
     try {
-      const { email, schoolId } = req.body;
+      const { email, userId } = req.body;
+      let { schoolId } = req.body;
+      const currentUser = (req as any).user;
 
-      if (!email || !schoolId) {
+      console.log('=== ADD TEACHER TO SCHOOL DEBUG ===');
+      console.log('Request Body:', req.body);
+      console.log('Email:', email, 'UserId:', userId, 'SchoolId (from body):', schoolId);
+      console.log('Current User School:', currentUser?.school);
+
+      // Si pas de schoolId, utiliser celui de l'admin connecté
+      if (!schoolId && currentUser && currentUser.school && currentUser.school.id) {
+        schoolId = currentUser.school.id;
+      }
+
+      // Si userId est fourni au lieu de email, récupérer l'email
+      let teacherEmail = email;
+      if (!teacherEmail && userId) {
+        const user = await this.userService.getUserById(userId);
+        if (!user) {
+          res.status(404).json({ message: 'Utilisateur non trouvé' });
+          return;
+        }
+        teacherEmail = user.email;
+      }
+
+      if (!teacherEmail || !schoolId) {
         res.status(400).json({
-          message: 'Les champs email et schoolId sont requis'
+          message: 'Les champs email (ou userId) et schoolId sont requis, ou vous devez être connecté en tant qu\'administrateur d\'école.'
         });
         return;
       }
 
-      const teacher = await this.userService.addTeacherToSchool(email, schoolId);
+      const teacher = await this.userService.addTeacherToSchool(teacherEmail, schoolId);
 
       res.status(200).json({
         message: 'Enseignant ajouté à l\'école avec succès',
@@ -716,7 +805,7 @@ export class UserController {
   }
 
   /**
-   * Retirer un enseignant d'une �cole
+   * Retirer un enseignant d'une cole
    */
   async removeTeacherFromSchool(req: Request, res: Response): Promise<void> {
     try {

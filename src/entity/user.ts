@@ -57,6 +57,9 @@ export class User {
     @Column({ nullable: true })
     password?: string;
 
+    @Column({ nullable: true, length: 50 })
+    matricule?: string;
+
     // Permission de créer une école (accordée par le SUPERADMIN)
     @Column({ default: false })
     canCreateSchool!: boolean;
